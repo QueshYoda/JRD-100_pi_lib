@@ -1,6 +1,7 @@
 #include "../JRD-100/jrd100.h"
 #include <iostream>
 #include <vector>
+#include <unistd.h>
 
 int main() {
     JRD100 rfid("/dev/serial0", 115200, true);
