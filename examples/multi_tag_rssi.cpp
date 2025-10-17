@@ -1,4 +1,4 @@
-#include "JRD-100/jrd100.h"
+#include "../jrd100/jrd100.h"
 #include <iostream>
 #include <vector>
 
@@ -10,28 +10,23 @@ int main() {
         return -1;
     }
 
-    // Çoklu polling başlat (komut 4)
+    // Çoklu polling başlat
     rfid.sendCommand(4);
-    sleep(1); // Modülün polling yapması için bekle
+    sleep(1);
 
-    // Cevabı oku
     auto resp = rfid.readResponse();
-
-    std::cout << "Çoklu Tag Yanıtı: " << std::endl;
-    for(size_t i = 0; i < resp.size(); i++) {
-        printf("%02X ", resp[i]);
-    }
+    std::cout << "Çoklu Tag Yanıtı: ";
+    for(auto v : resp) printf("%02X ", v);
     std::cout << std::endl;
 
-    // RSSI'yi al (komut 28)
+    // RSSI
     rfid.sendCommand(28);
     auto rssi_resp = rfid.readResponse();
-    std::cout << "RSSI Cevabı: ";
+    std::cout << "RSSI: ";
     for(auto v : rssi_resp) printf("%02X ", v);
     std::cout << std::endl;
 
-    // Çoklu polling durdur (komut 5)
-    rfid.sendCommand(5);
+    rfid.sendCommand(5); // polling durdur
 
     return 0;
 }
