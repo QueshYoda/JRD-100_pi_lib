@@ -1,4 +1,4 @@
-#include "../jrd100/jrd100.h"
+#include "jrd100/jrd100.h"
 #include <iostream>
 #include <vector>
 
