@@ -1,4 +1,4 @@
-#include "../jrd100.h"
+#include "../JRD-100/jrd100.h"
 #include <iostream>
 
 int main() {
