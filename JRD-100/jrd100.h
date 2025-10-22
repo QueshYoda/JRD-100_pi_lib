@@ -3,14 +3,21 @@
 
 #include <string>
 #include <vector>
+#include <cstdint>
+
+struct TagData {
+    std::vector<uint8_t> epc;
+    int rssi;
+};
 
 class JRD100 {
 public:
-    explicit JRD100(const std::string& port, int baudrate = 115200);
+    explicit JRD100(const std::string& port, int baudrate);
     ~JRD100();
 
     bool openPort();
     void closePort();
+    bool configurePort();
 
     bool sendCommand(const std::vector<uint8_t>& cmd);
     std::vector<uint8_t> readResponse();
@@ -18,13 +25,14 @@ public:
     bool singleRead();
     bool multiRead();
 
+    std::vector<TagData> readMultipleTags();
+    bool writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data);
+
 private:
     std::string portName;
     int baudRate;
     int serialFd;
     bool isOpen;
-
-    bool configurePort();
 };
 
 #endif
