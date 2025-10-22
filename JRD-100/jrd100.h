@@ -1,30 +1,38 @@
 #ifndef JRD100_H
 #define JRD100_H
 
-#include <stdint.h>
-#include <vector>
 #include <string>
+#include <vector>
+#include <cstdint>
+
+struct TagData {
+    std::vector<uint8_t> epc;
+    int rssi;
+};
 
 class JRD100 {
 public:
-    JRD100(const std::string& uart_port = "/dev/serial0", int baudrate = 115200, bool debug = true);
+    explicit JRD100(const std::string& port, int baudrate);
     ~JRD100();
 
-    bool begin();                          // Start UART 
-    void sendCommand(uint8_t cmd_num);     // Send command to UART
-    std::vector<uint8_t> readResponse();   // Read response from UART
+    bool openPort();
+    void closePort();
+    bool configurePort();
 
-    void setDebug(bool debug_flag);
+    bool sendCommand(const std::vector<uint8_t>& cmd);
+    std::vector<uint8_t> readResponse();
+
+    bool singleRead();
+    bool multiRead();
+
+    std::vector<TagData> readMultipleTags();
+    bool writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data);
 
 private:
-    int fd;                                // UART file descriptor
-    std::string uartDevice;
-    int baud;
-    bool DEBUG;
-
-    void writeByte(uint8_t b);
-
-    static const uint8_t RFID_cmdnub[][26]; // Command byte arrays
+    std::string portName;
+    int baudRate;
+    int serialFd;
+    bool isOpen;
 };
 
-#endif // JRD100_H
+#endif

@@ -1,116 +1,128 @@
 #include "jrd100.h"
-#include <fcntl.h>
-#include <unistd.h>
-#include <termios.h>
+#include "CMD.h"
 #include <iostream>
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
 #include <cstring>
 
-const uint8_t JRD100::RFID_cmdnub[][26] = {
-    {0xBB, 0x00, 0x03, 0x00, 0x01, 0x00, 0x04, 0x7E},       //0. Hardware version
-    {0xBB, 0x00, 0x03, 0x00, 0x01, 0x01, 0x05, 0x7E},       //1. Software version
-    {0xBB, 0x00, 0x03, 0x00, 0x01, 0x02, 0x06, 0x7E},       //2. manufacturers  
-    {0xBB, 0x00, 0x22, 0x00, 0x00, 0x22, 0x7E},             //3. Single polling instruction
-    {0xBB, 0x00, 0x27, 0x00, 0x03, 0x22, 0x27, 0x10, 0x83, 0x7E}, //4. Multiple polling instructions
-    {0xBB, 0x00, 0x28, 0x00, 0x00, 0x28, 0x7E},             //5. Stop multiple polling
-    {0xBB, 0x00, 0x0C, 0x00, 0x13, 0x01, 0x00, 0x00, 0x00, 0x20,
-     0x60, 0x00, 0x30, 0x75, 0x1F, 0xEB, 0x70, 0x5C, 0x59, 0x04,
-     0xE3, 0xD5, 0x0D, 0x70, 0xAD, 0x7E},                   //6. Set SELECT parameter
-    {0xBB, 0x00, 0x0B, 0x00, 0x00, 0x0B, 0x7E},              //7. Get SELECT parameter
-    {0xBB, 0x00, 0x12, 0x00, 0x01, 0x01, 0x14, 0x7E},        //8. Set SELECT mode
-    {0xBB, 0x00, 0x39, 0x00, 0x09, 0x00, 0x00, 0x00, 0x00, 0x03,
-     0x00, 0x00, 0x00, 0x08, 0x4D, 0x7E},                   //9. Read label data
-    {0xBB, 0x00, 0x49, 0x00, 0x11, 0x00, 0x00, 0x00, 0x00, 0x03,
-     0x00, 0x00, 0x00, 0x04, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x22, 0x71, 0x7E}, //10. Write label
-    {0xBB, 0x00, 0x82, 0x00, 0x07, 0x00, 0x00, 0xFF,
-     0xFF, 0x02, 0x00, 0x80, 0x09, 0x7E},                   //11. Lock label
-    {0xBB, 0x00, 0x65, 0x00, 0x04, 0x00, 0x00, 0xFF,
-     0xFF, 0x67, 0x7E},                                     //12. Inactivate kill tag
-    {0xBB, 0x00, 0x11, 0x00, 0x02, 0x00, 0xC0, 0xD3, 0x7E}, //13. Set baudrate
-    {0xBB, 0x00, 0x0D, 0x00, 0x00, 0x0D, 0x7E},             //14. Get Query parameters
-    {0xBB, 0x00, 0x0E, 0x00, 0x02, 0x10, 0x20, 0x40, 0x7E}, //15. Set Query parameter
-    {0xBB, 0x00, 0x07, 0x00, 0x01, 0x01, 0x09, 0x7E},       //16. Set work area
-    {0xBB, 0x00, 0x08, 0x00, 0x00, 0x08, 0x7E},             //17. Acquire work locations
-    {0xBB, 0x00, 0xAB, 0x00, 0x01, 0x01, 0xAC, 0x7E},       //18. Set working channel
-    {0xBB, 0x00, 0xAA, 0x00, 0x00, 0xAA, 0x7E},             //19. Get working channel
-    {0xBB, 0x00, 0xAD, 0x00, 0x01, 0xFF, 0xAD, 0x7E},       //20. Auto frequency hopping
-    {0xBB, 0x00, 0xA9, 0x00, 0x06, 0x05, 0x01, 0x02,
-     0x03, 0x04, 0x05, 0xC3, 0x7E},                         //21. Insert working channel
-    {0xBB, 0x00, 0xB7, 0x00, 0x00, 0xB7, 0x7E},             //22. Acquire tx power
-    {0xBB, 0x00, 0xB6, 0x00, 0x02, 0x07, 0xD0, 0x8F, 0x7E}, //23. Set tx power
-    {0xBB, 0x00, 0xB0, 0x00, 0x01, 0xFF, 0xB0, 0x7E},       //24. Tx continuous carrier
-    {0xBB, 0x00, 0xF1, 0x00, 0x00, 0xF1, 0x7E},             //25. Rx demodulator params
-    {0xBB, 0x00, 0xF0, 0x00, 0x04, 0x03, 0x06, 0x01,
-     0xB0, 0xAE, 0x7E},                                     //26. Set Rx demodulator
-    {0xBB, 0x00, 0xF2, 0x00, 0x00, 0xF2, 0x7E},             //27. Test RF input
-    {0xBB, 0x00, 0xF3, 0x00, 0x00, 0xF3, 0x7E},             //28. Test RSSI
-    {0x00},                                                 //29. Empty
-    {0xBB, 0x00, 0x17, 0x00, 0x00, 0x17, 0x7E},             //30. Module hibernation
-    {0xBB, 0x00, 0x1D, 0x00, 0x01, 0x02, 0x20, 0x7E},       //31. Idle hibernation
-    {0xBB, 0x00, 0x04, 0x00, 0x03, 0x01, 0x01, 0x03, 0x0C, 0x7E}, //32. IDLE mode
-    {0xBB, 0x00, 0xE1, 0x00, 0x05, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0xE4, 0x7E}, //33. ReadProtect
-    {0xBB, 0x00, 0xE3, 0x00, 0x05, 0x00, 0x00, 0xFF, 0xFF, 0x01, 0xE7, 0x7E}, //34. CHANGE EAS
-    {0xBB, 0x00, 0xE4, 0x00, 0x00, 0xE4, 0x7E},             //35. EAS_ALARM
-    {0xBB, 0x00, 0xE0, 0x00, 0x06, 0x00, 0x00, 0xFF, 0xFF, 0x00, 0x00, 0xE4, 0x7E}, //36. Config-word
-    {0xBB, 0x00, 0xE5, 0x00, 0x08, 0x00, 0x00, 0xFF, 0xFF, 0x01, 0x01, 0x40, 0x00, 0x2D, 0x7E}, //37. Impinj Monza Qt
-    {0xBB, 0x00, 0xD3, 0x00, 0x0B, 0x00, 0x00, 0xFF, 0xFF, 0x01, 0x03, 0x00, 0x00, 0x01, 0x07, 0x00, 0xE8, 0x7E} //38. BlockPermalock
-};
+JRD100::JRD100(const std::string& port, int baudrate)
+    : portName(port), baudRate(baudrate), serialFd(-1), isOpen(false) {}
 
-// Constructor
-JRD100::JRD100(const std::string& uart_port, int baudrate, bool debug)
-    : uartDevice(uart_port), baud(baudrate), DEBUG(debug), fd(-1) {}
-
-// Destructor
 JRD100::~JRD100() {
-    if(fd != -1) close(fd);
+    if (isOpen)
+        closePort();
 }
 
-bool JRD100::begin() {
-    fd = open(uartDevice.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
-    if (fd == -1) {
-        std::cerr << "UART open failed\n";
+bool JRD100::openPort() {
+    serialFd = open(portName.c_str(), O_RDWR | O_NOCTTY | O_SYNC);
+    if (serialFd < 0) {
+        std::cerr << "[ERROR] Port açılamadı: " << portName << std::endl;
         return false;
     }
-    struct termios options;
-    tcgetattr(fd, &options);
-    cfsetispeed(&options, B115200);
-    cfsetospeed(&options, B115200);
-    options.c_cflag |= (CLOCAL | CREAD);
-    options.c_cflag &= ~PARENB;
-    options.c_cflag &= ~CSTOPB;
-    options.c_cflag &= ~CSIZE;
-    options.c_cflag |= CS8;
-    tcsetattr(fd, TCSANOW, &options);
+
+    if (!configurePort()) {
+        close(serialFd);
+        return false;
+    }
+
+    isOpen = true;
+    std::cout << "[INFO] Port açıldı: " << portName << std::endl;
     return true;
 }
 
-void JRD100::writeByte(uint8_t b) {
-    if(fd != -1) write(fd, &b, 1);
-    if(DEBUG) std::cout << "TX: 0x" << std::hex << (int)b << std::endl;
+void JRD100::closePort() {
+    if (isOpen) {
+        close(serialFd);
+        isOpen = false;
+        std::cout << "[INFO] Port kapatıldı." << std::endl;
+    }
 }
 
-void JRD100::sendCommand(uint8_t cmd_num) {
-    if(cmd_num >= sizeof(RFID_cmdnub)/sizeof(RFID_cmdnub[0])) return;
-    const uint8_t* cmd = RFID_cmdnub[cmd_num];
-    for(int i=0; cmd[i]!=0x7E && i<26; i++) writeByte(cmd[i]);
-    writeByte(0x7E); // End byte
+bool JRD100::configurePort() {
+    struct termios tty{};
+    if (tcgetattr(serialFd, &tty) != 0) {
+        std::cerr << "[ERROR] Termios alınamadı.\n";
+        return false;
+    }
+
+    cfsetospeed(&tty, B115200);
+    cfsetispeed(&tty, B115200);
+
+    tty.c_cflag = (tty.c_cflag & ~CSIZE) | CS8;
+    tty.c_iflag &= ~IGNBRK;
+    tty.c_lflag = 0;
+    tty.c_oflag = 0;
+    tty.c_cc[VMIN]  = 0;
+    tty.c_cc[VTIME] = 10;
+    tty.c_iflag &= ~(IXON | IXOFF | IXANY);
+    tty.c_cflag |= (CLOCAL | CREAD);
+    tty.c_cflag &= ~(PARENB | PARODD);
+    tty.c_cflag &= ~CSTOPB;
+    tty.c_cflag &= ~CRTSCTS;
+
+    if (tcsetattr(serialFd, TCSANOW, &tty) != 0) {
+        std::cerr << "[ERROR] Port ayarlanamadı.\n";
+        return false;
+    }
+    return true;
+}
+
+bool JRD100::sendCommand(const std::vector<uint8_t>& cmd) {
+    if (!isOpen) return false;
+    ssize_t bytesWritten = write(serialFd, cmd.data(), cmd.size());
+    return bytesWritten == (ssize_t)cmd.size();
 }
 
 std::vector<uint8_t> JRD100::readResponse() {
-    std::vector<uint8_t> buf;
-    if(fd == -1) return buf;
-    uint8_t b;
-    while(read(fd, &b, 1) > 0) {
-        buf.push_back(b);
-        if(b == 0x7E) break; // Stop at end byte
-    }
-    if(DEBUG) {
-        std::cout << "RX: ";
-        for(auto v : buf) std::cout << "0x" << std::hex << (int)v << " ";
-        std::cout << std::endl;
-    }
-    return buf;
+    if (!isOpen) return {};
+    uint8_t buffer[512];
+    ssize_t len = read(serialFd, buffer, sizeof(buffer));
+    return std::vector<uint8_t>(buffer, buffer + len);
 }
 
-void JRD100::setDebug(bool debug_flag) {
-    DEBUG = debug_flag;
+bool JRD100::singleRead() {
+    std::vector<uint8_t> cmd(CMD_SINGLE_READ, CMD_SINGLE_READ + sizeof(CMD_SINGLE_READ));
+    if (!sendCommand(cmd)) return false;
+    auto resp = readResponse();
+    std::cout << "[READ] Tekli okuma yanıtı: ";
+    for (auto b : resp) std::cout << std::hex << (int)b << " ";
+    std::cout << std::dec << std::endl;
+    return !resp.empty();
+}
+
+bool JRD100::multiRead() {
+    std::vector<uint8_t> cmd(CMD_MULTI_READ, CMD_MULTI_READ + sizeof(CMD_MULTI_READ));
+    if (!sendCommand(cmd)) return false;
+    auto resp = readResponse();
+    std::cout << "[READ] Çoklu okuma yanıtı: ";
+    for (auto b : resp) std::cout << std::hex << (int)b << " ";
+    std::cout << std::dec << std::endl;
+    return !resp.empty();
+}
+
+std::vector<TagData> JRD100::readMultipleTags() {
+    std::vector<TagData> tags;
+
+    std::vector<uint8_t> cmd(CMD_MULTI_READ, CMD_MULTI_READ + sizeof(CMD_MULTI_READ));
+    if (!sendCommand(cmd)) return tags;
+
+    auto resp = readResponse();
+    if (resp.empty()) return tags;
+
+    // Örnek çözümleme (gerçek protokolde RSSI ve EPC ayrıştırılır)
+    TagData t;
+    t.epc = {0x30, 0x00, 0x11, 0x22, 0x33, 0x44};
+    t.rssi = -55;
+    tags.push_back(t);
+
+    return tags;
+}
+
+bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data) {
+    std::vector<uint8_t> cmd(CMD_WRITE_TAG, CMD_WRITE_TAG + sizeof(CMD_WRITE_TAG));
+    if (!sendCommand(cmd)) return false;
+
+    auto resp = readResponse();
+    return !resp.empty();
 }
