@@ -110,11 +110,25 @@ std::vector<TagData> JRD100::readMultipleTags() {
     auto resp = readResponse();
     if (resp.empty()) return tags;
 
-    // Örnek çözümleme (gerçek protokolde RSSI ve EPC ayrıştırılır)
-    TagData t;
-    t.epc = {0x30, 0x00, 0x11, 0x22, 0x33, 0x44};
-    t.rssi = -55;
-    tags.push_back(t);
+    size_t i = 0;
+    while (i + 1 < resp.size()) { // en az EPC uzunluğu + RSSI olmalı
+        TagData t;
+        uint8_t epcLen = resp[i];  // İlk byte EPC uzunluğu
+        if (i + 1 + epcLen >= resp.size()) break; // taşmayı önle
+
+        t.epc.assign(resp.begin() + i + 1, resp.begin() + i + 1 + epcLen);
+        t.rssi = static_cast<int>(resp[i + 1 + epcLen]); // RSSI, EPC’den sonra geliyor
+        tags.push_back(t);
+
+        i += 1 + epcLen + 1; // EPC length byte + EPC + RSSI
+    }
+
+    // Debug
+    for (auto& tag : tags) {
+        std::cout << "[TAG] EPC: ";
+        for (auto b : tag.epc) std::cout << std::hex << (int)b << " ";
+        std::cout << " RSSI: " << std::dec << tag.rssi << std::endl;
+    }
 
     return tags;
 }
