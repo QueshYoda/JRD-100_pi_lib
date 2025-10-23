@@ -20,6 +20,12 @@ target_link_libraries(WriteTag PRIVATE JRD100)
 add_executable(ReadMultipleTag examples/ReadMultipleTag.cpp)
 target_link_libraries(ReadMultipleTag PRIVATE JRD100)
 
+# YENİ EKLENEN HEDEF (TX GÜCÜ ARTIRILMIŞ)
+add_executable(MultiplePollingIncTx examples/MultiplePollingIncTx.cpp)
+target_link_libraries(MultiplePollingIncTx PRIVATE JRD100)
+
+
 # İsteğe bağlı: build dizini altında otomatik kopyalama
 set_target_properties(WriteTag PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set_target_properties(ReadMultipleTag PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set_target_properties(MultiplePollingIncTx PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")

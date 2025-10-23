@@ -309,6 +309,85 @@ std::vector<TagData> JRD100::readMultipleTags(int timeout_ms) {
 }
 
 
+// YENİ FONKSİYON: TX Gücünü ayarlar
+bool JRD100::setTxPower(uint16_t power_dbm) {
+    if (!isOpen) {
+        std::cerr << "[ERROR] Port açık değil, TX gücü ayarlanamıyor.\n";
+        return false;
+    }
+
+    // Komut: BB 00 B6 00 02 [P_H] [P_L] [CHK] 7E
+    std::vector<uint8_t> cmd = {0xBB, 0x00, 0xB6, 0x00, 0x02, 0x00, 0x00, 0x00, 0x7E};
+    
+    // Güç değerini ata (Big-Endian)
+    cmd[5] = (power_dbm >> 8) & 0xFF; // P_H
+    cmd[6] = power_dbm & 0xFF;        // P_L
+
+    // Checksum'ı hesapla (ADDR'dan DATA sonuna kadar)
+    cmd[7] = calculateChecksum(&cmd[1], 6); // 1'den 6'ya (dahil) kadar 6 byte
+
+    if (!sendCommand(cmd)) {
+        std::cerr << "[ERROR] TX güç komutu gönderilemedi.\n";
+        return false;
+    }
+
+    // Okuyucudan onayı bekle
+    std::vector<uint8_t> frame = readFrame();
+    if (frame.empty()) {
+        std::cerr << "[ERROR] TX güç ayarı onayı gelmedi.\n";
+        return false;
+    }
+
+    // Onay paketini doğrula (BB 00 B6 00 01 00 7A 7E)
+    // Başarılı cevap: dataLen=1, status=0
+    if (frame.size() >= 7 && frame[2] == 0xB6 && frame[4] == 0x01 && frame[5] == 0x00) {
+        std::cout << "[INFO] TX Gücü ayarlandı: " << std::fixed << std::setprecision(2) << (power_dbm / 100.0) << " dBm" << std::endl;
+        return true;
+    } else {
+        std::cerr << "[ERROR] TX güç ayarı başarısız oldu. Cevap: ";
+        for (auto b : frame) std::cout << std::hex << (int)b << " ";
+        std::cout << std::dec << std::endl;
+        return false;
+    }
+}
+
+// YENİ FONKSİYON: TX Gücünü okur
+int JRD100::getTxPower() {
+    if (!isOpen) {
+        std::cerr << "[ERROR] Port açık değil, TX gücü okunamıyor.\n";
+        return -1;
+    }
+
+    // Komut: BB 00 B7 00 00 B7 7E (CMD.h içindeki #22)
+    std::vector<uint8_t> cmd = {0xBB, 0x00, 0xB7, 0x00, 0x00, 0xB7, 0x7E};
+
+    if (!sendCommand(cmd)) {
+        std::cerr << "[ERROR] TX güç okuma komutu gönderilemedi.\n";
+        return -1;
+    }
+
+    // Okuyucudan cevabı bekle
+    std::vector<uint8_t> frame = readFrame();
+    if (frame.empty()) {
+        std::cerr << "[ERROR] TX güç okuma cevabı gelmedi.\n";
+        return -1;
+    }
+
+    // Cevap paketini doğrula (BB 00 B7 00 02 [P_H] [P_L] [CHK] 7E)
+    // dataLen=2
+    if (frame.size() >= 8 && frame[2] == 0xB7 && frame[4] == 0x02) {
+        uint16_t power_dbm = (frame[5] << 8) | frame[6];
+        std::cout << "[INFO] Mevcut TX Gücü: " << std::fixed << std::setprecision(2) << (power_dbm / 100.0) << " dBm" << std::endl;
+        return static_cast<int>(power_dbm);
+    } else {
+        std::cerr << "[ERROR] TX güç okuma başarısız oldu. Cevap: ";
+        for (auto b : frame) std::cout << std::hex << (int)b << " ";
+        std::cout << std::dec << std::endl;
+        return -1;
+    }
+}
+
+
 // Henüz implemente edilmedi
 bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data) {
     std::cerr << "[WARN] writeTag fonksiyonu henüz implemente edilmedi.\n";
@@ -317,17 +396,6 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
     return false;
 }
 
-/* // Bu fonksiyonlar artık readMultipleTags içinde yönetiliyor
-bool JRD100::singleRead() {
-    std::cerr << "[WARN] singleRead önerilmiyor. readMultipleTags(100) kullanın.\n";
-    auto tags = readMultipleTags(100); // 100ms'lik hızlı bir okuma yap
-    return !tags.empty();
-}
 
-bool JRD100::multiRead() {
-    std::cerr << "[WARN] multiRead önerilmiyor. readMultipleTags(1000) kullanın.\n";
-    auto tags = readMultipleTags(1000); // 1 saniyelik okuma yap
-    return !tags.empty();
-}
-*/
+
 

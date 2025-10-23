@@ -34,6 +34,19 @@ public:
 
     bool writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data);
 
+    /**
+     * @brief Okuyucunun RF çıkış gücünü (TX Power) ayarlar.
+     * @param power_dbm Güç (dBm * 100). Örn: 2700 = 27.00 dBm.
+     * @return Başarılıysa true.
+     */
+    bool setTxPower(uint16_t power_dbm);
+
+    /**
+     * @brief Okuyucunun mevcut RF çıkış gücünü (TX Power) okur.
+     * @return Güç (dBm * 100) veya hata durumunda -1.
+     */
+    int getTxPower();
+
 private:
     bool configurePort();
 
@@ -62,3 +75,4 @@ private:
 };
 
 #endif
+
