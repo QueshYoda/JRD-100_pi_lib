@@ -194,7 +194,8 @@ std::vector<uint8_t> JRD100::readFrame() {
         // Checksum doğrulaması
         uint8_t expectedChecksum = frame[frame.size() - 2];
         // Checksum ADDR'dan DATA'nın sonuna kadardır (BB ve CHK/7E hariç)
-        uint8_t calculatedChecksum = calculateChecksum(&frame[1], frame.size() - 4); 
+        // HATA DÜZELTMESİ: frame.size() - 4 yerine frame.size() - 3 olmalı.
+        uint8_t calculatedChecksum = calculateChecksum(&frame[1], frame.size() - 3); 
         
         if (expectedChecksum != calculatedChecksum) {
             std::cerr << "[WARN] Checksum hatası! Beklenen: " << std::hex << (int)expectedChecksum 
@@ -329,3 +330,4 @@ bool JRD100::multiRead() {
     return !tags.empty();
 }
 */
+
