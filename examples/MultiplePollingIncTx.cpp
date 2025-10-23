@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     // 2. Yeni gücü ayarla
     // Değeri 100 ile çarparak gönderin (örn: 3000 = 30.00 dBm)
     // Yasal sınırlar (genellikle 2700-3000) dahilinde kullanın.
-    uint16_t new_power_setting = 3000; // 30.00 dBm
+    uint16_t new_power_setting = 5000; // 30.00 dBm
     
     std::cout << std::fixed << std::setprecision(2) 
               << (new_power_setting / 100.0) 
