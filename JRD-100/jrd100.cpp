@@ -7,6 +7,7 @@
 #include <cstring>
 #include <chrono> // Eklendi
 #include <thread> // Eklendi
+#include <iomanip>
 
 // CMD_STOP_MULTI_READ komutu CMD.h dosyanızda yoksa, onu buraya ekleyin.
 // Bu, çoklu okumayı durduran standart bir komuttur.
