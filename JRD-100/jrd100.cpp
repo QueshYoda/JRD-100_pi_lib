@@ -1,16 +1,14 @@
 #include "jrd100.h"
-#include "CMD.h" // CMD_MULTI_READ burada olmalı
+#include "CMD.h" 
 #include <iostream>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
 #include <cstring>
-#include <chrono> // Eklendi
-#include <thread> // Eklendi
+#include <chrono> 
+#include <thread> 
 #include <iomanip>
 
-// CMD_STOP_MULTI_READ komutu CMD.h dosyanızda yoksa, onu buraya ekleyin.
-// Bu, çoklu okumayı durduran standart bir komuttur.
 static const uint8_t CMD_STOP_MULTI_READ[] = {0xBB, 0x00, 0x28, 0x00, 0x00, 0x28, 0x7E};
 
 // JRD100 Constructor
