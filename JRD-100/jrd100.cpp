@@ -77,6 +77,7 @@ bool JRD100::sendCommand(const std::vector<uint8_t>& cmd) {
 std::vector<uint8_t> JRD100::readResponse() {
     if (!isOpen) return {};
     uint8_t buffer[512];
+    usleep(200000); // 100ms bekle
     ssize_t len = read(serialFd, buffer, sizeof(buffer));
     return std::vector<uint8_t>(buffer, buffer + len);
 }
