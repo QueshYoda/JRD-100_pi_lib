@@ -69,19 +69,36 @@ bool JRD100::configurePort() {
 }
 
 bool JRD100::sendCommand(const std::vector<uint8_t>& cmd) {
-    if (!isOpen) return false;
+    if (!isOpen){
+        std::cerr << "[ERROR] Port açık değil, komut gönderilemiyor.\n";
+        return false;
+    }
     ssize_t bytesWritten = write(serialFd, cmd.data(), cmd.size());
+    
+    std::cout << "[DEBUG] Sent: ";
+    for (auto b : cmd) std::cout << std::hex << (int)b << " ";
+    std::cout << std::dec << std::endl;
+
     return bytesWritten == (ssize_t)cmd.size();
 }
 
 std::vector<uint8_t> JRD100::readResponse() {
     if (!isOpen) return {};
     uint8_t buffer[512];
-    usleep(200000); // 100ms bekle
+    usleep(500000); // 500 ms bekle
     ssize_t len = read(serialFd, buffer, sizeof(buffer));
+
+    if (len <= 0) {
+        std::cerr << "[WARN] Cevap gelmedi (" << len << " byte)\n";
+        return {};
+    }
+
+    std::cout << "[DEBUG] Read " << len << " bytes: ";
+    for (int i = 0; i < len; i++) std::cout << std::hex << (int)buffer[i] << " ";
+    std::cout << std::dec << std::endl;
+
     return std::vector<uint8_t>(buffer, buffer + len);
 }
-
 bool JRD100::singleRead() {
     std::vector<uint8_t> cmd(CMD_SINGLE_READ, CMD_SINGLE_READ + sizeof(CMD_SINGLE_READ));
     if (!sendCommand(cmd)) return false;
