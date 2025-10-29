@@ -2,63 +2,56 @@
 #include <iostream>
 #include <iomanip> // std::setw, std::setfill, std::setprecision
 
-// Etiket verisini formatlı yazdırma fonksiyonu
 void printTag(const TagData& tag) {
     std::cout << "EPC: ";
-    // EPC'yi hex formatında yazdır
+    // EPC to HEX
     for (const auto& byte : tag.epc) {
         std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
     }
-    // RSSI'yi decimal formatında yazdır
     std::cout << " | RSSI: " << std::dec << tag.rssi << " dBm" << std::endl;
 }
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Kullanım: " << argv[0] << " /dev/serial0" << std::endl;
+        std::cerr << " Serial Port : " << argv[0] << " /dev/serial0" << std::endl;
         return 1;
     }
 
     std::string port = argv[1];
-    JRD100 reader(port); // Baudrate varsayılan olarak 115200
+    JRD100 reader(port); 
 
     if (!reader.openPort()) {
-        std::cerr << "Okuyucuya bağlanılamadı." << std::endl;
+        std::cerr << "Reader not found." << std::endl;
         return 1;
     }
 
     // --- TX GÜCÜ AYARLAMA BÖLÜMÜ ---
 
-    // 1. (İsteğe bağlı) Mevcut gücü oku
-    std::cout << "Mevcut TX gücü okunuyor..." << std::endl;
+    
     reader.getTxPower(); 
 
-    // 2. Yeni gücü ayarla
-    // Değeri 100 ile çarparak gönderin (örn: 3000 = 30.00 dBm)
-    // Yasal sınırlar (genellikle 2700-3000) dahilinde kullanın.
-    uint16_t new_power_setting = 5000; // 30.00 dBm
+    // Set new TX power
+    uint16_t new_power_setting = 5000; // 50.00 dBm
     
     std::cout << std::fixed << std::setprecision(2) 
               << (new_power_setting / 100.0) 
-              << " dBm olarak ayarlanıyor..." << std::endl;
+              << " Setting power..." << std::endl;
 
     if (!reader.setTxPower(new_power_setting)) {
-        std::cerr << "UYARI: TX Gücü ayarlanamadı, varsayılanla devam ediliyor." << std::endl;
+        std::cerr << "Warning:Setting TX power failed. Turning default settings" << std::endl;
     }
-    // --- TX GÜCÜ AYARLAMA BÖLÜMÜ BİTTİ ---
 
 
-    std::cout << "\n--- Etiketler 2 saniye boyunca okunuyor... ---" << std::endl;
 
-    // 2000 milisaniye (2 saniye) boyunca etiketleri oku
+    // Set reading interval 2000 ms
     std::vector<TagData> tags = reader.readMultipleTags(2000);
 
-    std::cout << "--- Okuma tamamlandı ---" << std::endl;
+    std::cout << "--- Reading Done ---" << std::endl;
 
     if (tags.empty()) {
-        std::cout << "Hiç etiket bulunamadı." << std::endl;
+        std::cout << "Tag No Found." << std::endl;
     } else {
-        std::cout << "Toplam " << tags.size() << " adet benzersiz etiket bulundu:" << std::endl;
+        std::cout << "Total " << tags.size() << " unique tags found." << std::endl;
         for (const auto& tag : tags) {
             printTag(tag);
         }

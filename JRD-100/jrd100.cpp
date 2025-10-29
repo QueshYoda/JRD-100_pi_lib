@@ -21,14 +21,14 @@ JRD100::~JRD100() {
         closePort();
 }
 
-// Portu açar
+// Open the serial port
 bool JRD100::openPort() {
     serialFd = open(portName.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
     if (serialFd < 0) {
         std::cerr << "[ERROR] Port açılamadı: " << portName << std::endl;
         return false;
     }
-    fcntl(serialFd, F_SETFL, 0); // Engelleme moduna geri dön
+    fcntl(serialFd, F_SETFL, 0); // Blocking mode
 
     if (!configurePort()) {
         close(serialFd);
@@ -36,25 +36,25 @@ bool JRD100::openPort() {
     }
 
     isOpen = true;
-    tcflush(serialFd, TCIOFLUSH); // Portu temizle
-    std::cout << "[INFO] Port açıldı: " << portName << std::endl;
+    tcflush(serialFd, TCIOFLUSH); // Clear input and output buffers
+    std::cout << "[INFO] Port opened: " << portName << std::endl;
     return true;
 }
 
-// Portu kapatır
+// Close the serial port
 void JRD100::closePort() {
     if (isOpen) {
         close(serialFd);
         isOpen = false;
-        std::cout << "[INFO] Port kapatıldı." << std::endl;
+        std::cout << "[INFO] Port closed." << std::endl;
     }
 }
 
-// Port ayarlarını yapar
+// Configure serial port settings
 bool JRD100::configurePort() {
     struct termios tty{};
     if (tcgetattr(serialFd, &tty) != 0) {
-        std::cerr << "[ERROR] Termios alınamadı.\n";
+        std::cerr << "[ERROR] Termios not found.\n";
         return false;
     }
 
@@ -65,11 +65,7 @@ bool JRD100::configurePort() {
     tty.c_iflag &= ~IGNBRK;                   // disable break processing
     tty.c_lflag = 0;                          // no signaling chars, no echo,
     tty.c_oflag = 0;                          // no remapping, no delays
-    
-    // --- OKUMA AYARLARI GÜNCELLENDİ ---
-    // VMIN = 0, VTIME = 5: Engellemesiz (non-blocking) okuma.
-    // read() fonksiyonu hemen döner. Veri varsa veriyi, yoksa 0 döndürür.
-    // 0.5 saniye (5 * 100ms) içinde veri gelmezse time-out olur.
+
     tty.c_cc[VMIN]  = 0; 
     tty.c_cc[VTIME] = 5; 
 
@@ -80,13 +76,13 @@ bool JRD100::configurePort() {
     tty.c_cflag &= ~CRTSCTS;               // no flow control
 
     if (tcsetattr(serialFd, TCSANOW, &tty) != 0) {
-        std::cerr << "[ERROR] Port ayarlanamadı.\n";
+        std::cerr << "[ERROR] Port not configured.\n";
         return false;
     }
     return true;
 }
 
-// Kontrol toplamını (checksum) hesaplar
+// CRC
 uint8_t JRD100::calculateChecksum(const uint8_t* data, size_t len) {
     uint8_t sum = 0;
     for (size_t i = 0; i < len; ++i) {
@@ -95,14 +91,13 @@ uint8_t JRD100::calculateChecksum(const uint8_t* data, size_t len) {
     return sum;
 }
 
-// Komut gönderir
+// Send command to the reader
 bool JRD100::sendCommand(const std::vector<uint8_t>& cmd) {
     if (!isOpen) {
-        std::cerr << "[ERROR] Port açık değil, komut gönderilemiyor.\n";
+        std::cerr << "[ERROR] Port is closed.\n";
         return false;
     }
     
-    // Göndermeden önce porttaki eski verileri temizle
     tcflush(serialFd, TCIFLUSH); 
 
     ssize_t bytesWritten = write(serialFd, cmd.data(), cmd.size());
@@ -114,23 +109,19 @@ bool JRD100::sendCommand(const std::vector<uint8_t>& cmd) {
     return bytesWritten == (ssize_t)cmd.size();
 }
 
-// YENİ FONKSİYON: Bir tam 'bb...7e' paketi okur
 std::vector<uint8_t> JRD100::readFrame() {
     if (!isOpen) return {};
 
     auto startTime = std::chrono::steady_clock::now();
 
     while (true) {
-        // 1. Zaman aşımı kontrolü
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count() > 1000) {
-            // 1 saniyedir tam bir paket bulamadık
-            // std::cerr << "[DEBUG] readFrame timeout." << std::endl;
-            readBuffer.clear(); // Hatalı veriyi temizle
+
+            readBuffer.clear(); 
             return {};
         }
-
-        // 2. 'bb' (Başlangıç) ara
+        // Look for start byte 0xBB
         size_t startPos = std::string::npos;
         for (size_t i = 0; i < readBuffer.size(); ++i) {
             if (readBuffer[i] == 0xBB) {
@@ -138,36 +129,31 @@ std::vector<uint8_t> JRD100::readFrame() {
                 break;
             }
         }
-
+        // No start byte found yet
         if (startPos == std::string::npos) {
-            // 'bb' bulunamadı, daha fazla veri oku
             uint8_t tempBuf[256];
             ssize_t len = read(serialFd, tempBuf, sizeof(tempBuf));
             if (len > 0) {
                 readBuffer.insert(readBuffer.end(), tempBuf, tempBuf + len);
             } else {
-                // Veri gelmiyorsa kısa bir süre bekle
                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
-            continue; // Döngüye baştan başla
+            continue; 
         }
-
-        // 'bb' bulundu, 'bb'den önceki tüm veriyi at
+        // Discard bytes before start byte
         if (startPos > 0) {
             readBuffer.erase(readBuffer.begin(), readBuffer.begin() + startPos);
         }
-
-        // 3. '7e' (Bitiş) ara
+        // Now look for end byte 0x7E
         size_t endPos = std::string::npos;
-        for (size_t i = 1; i < readBuffer.size(); ++i) { // 1'den başla (bb'yi atla)
+        for (size_t i = 1; i < readBuffer.size(); ++i) { 
             if (readBuffer[i] == 0x7E) {
                 endPos = i;
                 break;
             }
         }
-
+        
         if (endPos == std::string::npos) {
-            // '7e' bulunamadı, daha fazla veri oku
             uint8_t tempBuf[256];
             ssize_t len = read(serialFd, tempBuf, sizeof(tempBuf));
             if (len > 0) {
@@ -175,34 +161,28 @@ std::vector<uint8_t> JRD100::readFrame() {
             } else {
                  std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
-            continue; // Döngüye baştan başla
+            continue; 
         }
-
-        // 4. Paket bulundu!
+        // Extract full frame
         std::vector<uint8_t> frame(readBuffer.begin(), readBuffer.begin() + endPos + 1);
         
-        // Paketi ara bellekten sil
         readBuffer.erase(readBuffer.begin(), readBuffer.begin() + endPos + 1);
-
-        // 5. Paketi doğrula (Minimum uzunluk ve Checksum)
-        if (frame.size() < 7) { // En kısa paket: BB ADDR CMD LEN_H LEN_L CHK 7E
-            std::cerr << "[WARN] Kısa paket alındı, atlanıyor.\n";
-            continue; // Çok kısa, hatalı paket. Döngüye devam et.
+        // Validate frame
+        if (frame.size() < 7) { // BB ADDR CMD LEN_H LEN_L CHK 7E
+            std::cerr << "[WARN] Short package, skipping.\n";
+            continue; 
         }
 
-        // Checksum doğrulaması
+        // Checksum 
         uint8_t expectedChecksum = frame[frame.size() - 2];
-        // Checksum ADDR'dan DATA'nın sonuna kadardır (BB ve CHK/7E hariç)
-        // HATA DÜZELTMESİ: frame.size() - 4 yerine frame.size() - 3 olmalı.
-        uint8_t calculatedChecksum = calculateChecksum(&frame[1], frame.size() - 3); 
+                uint8_t calculatedChecksum = calculateChecksum(&frame[1], frame.size() - 3); 
         
         if (expectedChecksum != calculatedChecksum) {
-            std::cerr << "[WARN] Checksum hatası! Beklenen: " << std::hex << (int)expectedChecksum 
-                      << " Hesaplanan: " << (int)calculatedChecksum << std::dec << std::endl;
-            continue; // Checksum hatalı, paketi atla.
+            std::cerr << "[WARN] Checksum mistake! Expected: " << std::hex << (int)expectedChecksum 
+                      << " Calculated: " << (int)calculatedChecksum << std::dec << std::endl;
+            continue; 
         }
-
-        // 6. Geçerli paket
+        // Valid frame
         std::cout << "[DEBUG] Frame OK: ";
         for (auto b : frame) std::cout << std::hex << (int)b << " ";
         std::cout << std::dec << std::endl;
@@ -308,7 +288,7 @@ std::vector<TagData> JRD100::readMultipleTags(int timeout_ms) {
 }
 
 
-// YENİ FONKSİYON: TX Gücünü ayarlar
+// Set TX Power
 bool JRD100::setTxPower(uint16_t power_dbm) {
     if (!isOpen) {
         std::cerr << "[ERROR] Port açık değil, TX gücü ayarlanamıyor.\n";
@@ -350,7 +330,6 @@ bool JRD100::setTxPower(uint16_t power_dbm) {
     }
 }
 
-// YENİ FONKSİYON: TX Gücünü okur
 int JRD100::getTxPower() {
     if (!isOpen) {
         std::cerr << "[ERROR] Port açık değil, TX gücü okunamıyor.\n";
@@ -372,7 +351,7 @@ int JRD100::getTxPower() {
         return -1;
     }
 
-    // Cevap paketini doğrula (BB 00 B7 00 02 [P_H] [P_L] [CHK] 7E)
+    // Verify package (BB 00 B7 00 02 [P_H] [P_L] [CHK] 7E)
     // dataLen=2
     if (frame.size() >= 8 && frame[2] == 0xB7 && frame[4] == 0x02) {
         uint16_t power_dbm = (frame[5] << 8) | frame[6];
