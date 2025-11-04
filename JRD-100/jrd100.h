@@ -31,10 +31,16 @@ public:
      */
     std::vector<TagData> readMultipleTags(int timeout_ms = 500);
 
+    /**
+     * @brief Etikete veri yazar.
+     * @param epc Hedef etiketi filtrelemek için EPC verisi. Boş vektör ({}) filtre uygulamazi.
+     * @param data Yazılacak veri. Uzunluğu 2'nin katı (word) olmalıdır.
+     * @return 
+     */
     bool writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data);
 
     /**
-     * @brief
+     * @brief 
      * @param power_dbm 
      * @return 
      */
@@ -74,4 +80,3 @@ private:
 };
 
 #endif
-

@@ -1,5 +1,5 @@
 #include "jrd100.h"
-#include "CMD.h" 
+#include "CMD.h"
 #include <iostream>
 #include <fcntl.h>
 #include <termios.h>
@@ -159,7 +159,7 @@ std::vector<uint8_t> JRD100::readFrame() {
             if (len > 0) {
                 readBuffer.insert(readBuffer.end(), tempBuf, tempBuf + len);
             } else {
-                 std::this_thread::sleep_for(std::chrono::milliseconds(5));
+                std::this_thread::sleep_for(std::chrono::milliseconds(5));
             }
             continue; 
         }
@@ -291,26 +291,26 @@ std::vector<TagData> JRD100::readMultipleTags(int timeout_ms) {
 // Set TX Power
 bool JRD100::setTxPower(uint16_t power_dbm) {
     if (!isOpen) {
-        std::cerr << "[ERROR] Port açık değil, TX gücü ayarlanamıyor.\n";
+        std::cerr << "[ERROR] Port is closed.\n";
         return false;
     }
 
-    // Komut: BB 00 B6 00 02 [P_H] [P_L] [CHK] 7E
+    // Command: BB 00 B6 00 02 [P_H] [P_L] [CHK] 7E
     std::vector<uint8_t> cmd = {0xBB, 0x00, 0xB6, 0x00, 0x02, 0x00, 0x00, 0x00, 0x7E};
     
     // Güç değerini ata (Big-Endian)
     cmd[5] = (power_dbm >> 8) & 0xFF; // P_H
-    cmd[6] = power_dbm & 0xFF;        // P_L
+    cmd[6] = power_dbm & 0xFF;       // P_L
 
-    // Checksum'ı hesapla (ADDR'dan DATA sonuna kadar)
-    cmd[7] = calculateChecksum(&cmd[1], 6); // 1'den 6'ya (dahil) kadar 6 byte
+    // Calculate checksum
+    cmd[7] = calculateChecksum(&cmd[1], 6); 
 
     if (!sendCommand(cmd)) {
-        std::cerr << "[ERROR] TX güç komutu gönderilemedi.\n";
+        std::cerr << "[ERROR] TX power command not send.\n";
         return false;
     }
 
-    // Okuyucudan onayı bekle
+    // Wait for acknowledgment from reader
     std::vector<uint8_t> frame = readFrame();
     if (frame.empty()) {
         std::cerr << "[ERROR] TX güç ayarı onayı gelmedi.\n";
@@ -366,14 +366,115 @@ int JRD100::getTxPower() {
 }
 
 
-// Henüz implemente edilmedi
+// YENİ İMPLEMENTASYON: writeTag
 bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data) {
-    std::cerr << "[WARN] writeTag fonksiyonu henüz implemente edilmedi.\n";
-    // TODO: 'CMD_WRITE_TAG' komutunu 'sendCommand' ile gönder
-    // ve 'readFrame' ile 'bb...ff...7e' formatındaki onayı bekle.
-    return false;
+    if (!isOpen) {
+        std::cerr << "[ERROR] Port is closed.\n";
+        return false;
+    }
+
+    if (data.empty()) {
+        std::cerr << "[ERROR] Write data cannot be empty.\n";
+        return false;
+    }
+
+    // Veri uzunluğu 2'nin katı olmalı (16-bit words)
+    if (data.size() % 2 != 0) {
+        std::cerr << "[ERROR] Write data length must be a multiple of 2 bytes (1 word).\n";
+        return false;
+    }
+
+    // Komut yükünü (payload) oluştur
+    std::vector<uint8_t> payload;
+
+    // 1. Access Password (2 bytes) - default 0x0000
+    payload.push_back(0x00);
+    payload.push_back(0x00);
+
+    // 2. EPC Filtre Uzunluğu (2 bytes, Big-Endian) - BYTE cinsinden
+    //    Eğer epc vektörü boşsa, filtre uygulanmaz (uzunluk 0 olur).
+    payload.push_back((epc.size() >> 8) & 0xFF);
+    payload.push_back(epc.size() & 0xFF);
+
+    // 3. Hafıza Bankası (1 byte)
+    //    0x01 = EPC, 0x02 = TID, 0x03 = USER
+    //    CMD_WRITE_TAG örneğindeki gibi USER bankasına (0x03) yazıyoruz.
+    payload.push_back(0x03); 
+
+    // 4. Başlangıç Adresi (2 bytes, Big-Endian) - WORD cinsinden
+    //    Adres 0x0000'dan başlıyoruz.
+    payload.push_back(0x00);
+    payload.push_back(0x00);
+
+    // 5. Veri Uzunluğu (2 bytes, Big-Endian) - WORD cinsinden
+    uint16_t dataLenWords = data.size() / 2;
+    payload.push_back((dataLenWords >> 8) & 0xFF);
+    payload.push_back(dataLenWords & 0xFF);
+
+    // 6. Veri (N bytes)
+    payload.insert(payload.end(), data.begin(), data.end());
+
+    // 7. EPC Filtresi (M bytes)
+    payload.insert(payload.end(), epc.begin(), epc.end());
+
+    // ---
+    // Tam komut çerçevesini (frame) oluştur
+    // ---
+    std::vector<uint8_t> cmd;
+    cmd.push_back(0xBB); // Start
+    cmd.push_back(0x00); // Address
+    cmd.push_back(0x49); // Command: WRITE_TAG
+
+    // Toplam Yük (Payload) Uzunluğu (2 bytes, Big-Endian)
+    cmd.push_back((payload.size() >> 8) & 0xFF);
+    cmd.push_back(payload.size() & 0xFF);
+
+    // Yükü (Payload) ekle
+    cmd.insert(cmd.end(), payload.begin(), payload.end());
+
+    // Checksum (Adres, Komut, Uzunluk ve Yük üzerinden hesaplanır)
+    cmd.push_back(calculateChecksum(&cmd[1], cmd.size() - 1));
+
+    // End
+    cmd.push_back(0x7E);
+
+    // Komutu gönder
+    if (!sendCommand(cmd)) {
+        std::cerr << "[ERROR] Write command not send.\n";
+        return false;
+    }
+
+    // Okuyucudan onayı bekle
+    std::vector<uint8_t> frame = readFrame();
+    if (frame.empty()) {
+        std::cerr << "[ERROR] Write command acknowledgment not received.\n";
+        return false;
+    }
+
+    // Onayı doğrula
+    // Başarılı cevap: BB 00 49 00 01 00 [CHK] 7E (Status 0x00 = OK)
+    // (setTxPower fonksiyonundaki gibi benzer bir cevap formatı varsayıyoruz)
+    if (frame.size() >= 7 && frame[2] == 0x49 && frame[4] == 0x01 && frame[5] == 0x00) {
+        std::cout << "[INFO] Tag write successful." << std::endl;
+        return true;
+    } 
+    // Genel hata cevabı
+    else if (frame.size() >= 7 && frame[2] == 0xFF) {
+        uint8_t statusCode = frame[5];
+        std::cerr << "[ERROR] Tag write failed. Reader returned error code: 0x" << std::hex << (int)statusCode << std::dec << std::endl;
+        return false;
+    }
+    // 0x49 komutuna özel hata cevabı
+    else if (frame.size() >= 7 && frame[2] == 0x49 && frame[4] == 0x01 && frame[5] != 0x00) {
+            uint8_t statusCode = frame[5];
+        std::cerr << "[ERROR] Tag write failed. Reader returned error code: 0x" << std::hex << (int)statusCode << std::dec << std::endl;
+        return false;
+    }
+    // Bilinmeyen cevap
+    else {
+        std::cerr << "[ERROR] Unknown response after write command: ";
+        for (auto b : frame) std::cout << std::hex << (int)b << " ";
+        std::cout << std::dec << std::endl;
+        return false;
+    }
 }
-
-
-
-
