@@ -1,6 +1,6 @@
 #include "jrd100.h"
 #include <iostream>
-#include <iomanip> // std::setw ve std::setfill için
+#include <iomanip> 
 
 void printTag(const TagData& tag) {
     std::cout << "EPC: ";
@@ -29,7 +29,7 @@ int main(int argc, char** argv) {
     std::cout << "--- Etiketler 2 saniye boyunca okunuyor... ---" << std::endl;
 
     // 2000 milisaniye (2 saniye) boyunca etiketleri oku
-    std::vector<TagData> tags = reader.readMultipleTags(200000);
+    std::vector<TagData> tags = reader.readMultipleTags(2000);
 
     std::cout << "--- Okuma tamamlandı ---" << std::endl;
 

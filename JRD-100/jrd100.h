@@ -4,7 +4,8 @@
 #include <string>
 #include <vector>
 #include <cstdint>
-#include <chrono> 
+#include <chrono>
+#include <mutex>
 
 struct TagData {
     std::vector<uint8_t> epc;
@@ -21,34 +22,31 @@ public:
 
     bool sendCommand(const std::vector<uint8_t>& cmd);
 
-    // bool singleRead();
-    // bool multiRead(); 
-
     /**
-     * @brief
-     * @param timeout_ms 
-     * @return 
+     * @brief Çoklu etiket okuma
+     * @param timeout_ms süre (ms)
+     * @return bulunan etiketler
      */
     std::vector<TagData> readMultipleTags(int timeout_ms = 500);
 
     /**
      * @brief Etikete veri yazar.
-     * @param epc Hedef etiketi filtrelemek için EPC verisi. Boş vektör ({}) filtre uygulamazi.
+     * @param epc Hedef etiketi filtrelemek için EPC verisi. Boş vektör ({}) filtre uygulanmaz.
      * @param data Yazılacak veri. Uzunluğu 2'nin katı (word) olmalıdır.
-     * @return 
+     * @return başarılı mı
      */
     bool writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data);
 
     /**
-     * @brief 
-     * @param power_dbm 
-     * @return 
+     * @brief TX gücü ayarla (ör: 2300 => 23.00 dBm)
+     * @param power_dbm power value in hundredths of dBm
+     * @return başarılı mı
      */
     bool setTxPower(uint16_t power_dbm);
 
     /**
-     * @brief 
-     * @return 
+     * @brief TX gücünü oku (hundredths of dBm)
+     * @return power value veya -1 hata
      */
     int getTxPower();
 
@@ -56,27 +54,23 @@ private:
     bool configurePort();
 
     /**
-     * @brief 
-     * @return 
+     * @brief Bir tam frame okur (start=0xBB, end=0x7E). Timeout internal (1s).
+     * @return frame vector veya boş
      */
     std::vector<uint8_t> readFrame();
-    
+
     /**
-     * @brief 
-     * @param packet 
-     * @return 
+     * @brief hesaplama için yardımcı checksum (verilen buffer içindeki startIndex'ten endIndex'e kadar toplar)
      */
-    uint8_t calculateChecksum(const uint8_t* data, size_t len);
+    uint8_t calculateChecksumRange(const std::vector<uint8_t>& buf, size_t startIndex, size_t endIndex);
 
     std::string portName;
     int baudRate;
     int serialFd;
     bool isOpen;
 
-    /**
-     * @brief 
-     */
-    std::vector<uint8_t> readBuffer; 
+    std::vector<uint8_t> readBuffer;
+    std::mutex ioMutex; // send/read eşzamanlaması için
 };
 
-#endif
+#endif // JRD100_H

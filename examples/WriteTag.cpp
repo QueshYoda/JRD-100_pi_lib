@@ -8,7 +8,7 @@
 int main(int argc, char* argv[]) {
     // 1. Port adını komut satırından al
     if (argc < 2) {
-        std::cerr << "Kullanım: " << argv[0] << " /dev/" << std::endl;
+        std::cerr << "Kullanım: " << argv[0] << " /dev/serial0" << std::endl;
         std::cerr << "Lütfen seri port adını argüman olarak belirtin." << std::endl;
         return 1;
     }
@@ -29,7 +29,7 @@ int main(int argc, char* argv[]) {
     // 3. YAZILACAK VERİ:
     // 4 byte'lık örnek veri. jrd100.cpp'deki implementasyona göre
     // veri uzunluğu 2'nin katı (word) olmalıdır.
-    std::vector<uint8_t> dataToWrite = {0x12, 0x34, 0x56, 0x78 , 0x9A, 0xBC , 0xB6, 0xA8 ,0x1F,}; // 8 byte = 4 word
+    std::vector<uint8_t> dataToWrite = {0x12, 0x34, 0x56, 0x78 , 0x9A, 0xBC , 0xB6, 0xA8 ,0x1F}; // 8 byte = 4 word
 
     // 4. EPC FİLTRESİ (İsteğe bağlı):
     // Hangi etikete yazılacağını belirler.

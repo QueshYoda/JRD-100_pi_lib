@@ -1,10 +1,11 @@
 #include "jrd100.h"
 #include <iostream>
-#include <iomanip> // std::setw, std::setfill, std::setprecision
+#include <iomanip>
+#include <thread>
+#include <chrono>
 
 void printTag(const TagData& tag) {
     std::cout << "EPC: ";
-    // EPC to HEX
     for (const auto& byte : tag.epc) {
         std::cout << std::hex << std::setw(2) << std::setfill('0') << static_cast<int>(byte) << " ";
     }
@@ -13,50 +14,52 @@ void printTag(const TagData& tag) {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << " Serial Port : " << argv[0] << " /dev/serial0" << std::endl;
+        std::cerr << "Kullanım: " << argv[0] << " /dev/serial0" << std::endl;
         return 1;
     }
 
     std::string port = argv[1];
-    JRD100 reader(port); 
+    JRD100 reader(port);
 
     if (!reader.openPort()) {
-        std::cerr << "Reader not found." << std::endl;
+        std::cerr << "HATA: Reader bulunamadı veya port açılamadı." << std::endl;
         return 1;
     }
 
-    // --- TX GÜCÜ AYARLAMA BÖLÜMÜ ---
+    std::cout << "Reader bağlı. TX güç denemesi başlatılıyor..." << std::endl;
 
-    
-    reader.getTxPower(); 
+    // Güç değerlerini 70 dBm'den 10 dBm'ye doğru 10'ar azaltarak dene
+    for (int dbm = 70; dbm >= 10; dbm -= 10) {
+        uint16_t power_setting = dbm * 100; // örn: 70 dBm -> 7000
+        std::cout << "\nDeneme -> " << dbm << " dBm (" << power_setting << ")\n";
 
-    // Set new TX power
-    uint16_t new_power_setting = 5000; // 50.00 dBm
-    
-    std::cout << std::fixed << std::setprecision(2) 
-              << (new_power_setting / 100.0) 
-              << " Setting power..." << std::endl;
-
-    if (!reader.setTxPower(new_power_setting)) {
-        std::cerr << "Warning:Setting TX power failed. Turning default settings" << std::endl;
-    }
-
-
-
-    // Set reading interval 2000 ms
-    std::vector<TagData> tags = reader.readMultipleTags(2000);
-
-    std::cout << "--- Reading Done ---" << std::endl;
-
-    if (tags.empty()) {
-        std::cout << "Tag No Found." << std::endl;
-    } else {
-        std::cout << "Total " << tags.size() << " unique tags found." << std::endl;
-        for (const auto& tag : tags) {
-            printTag(tag);
+        bool ok = reader.setTxPower(power_setting);
+        if (ok) {
+            std::cout << "✅ Güç başarıyla ayarlandı: " << dbm << " dBm" << std::endl;
+        } else {
+            std::cout << "❌ Ayarlama başarısız: " << dbm << " dBm" << std::endl;
         }
+
+        // Donanımın stabilize olması için biraz bekle
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        // İsteğe bağlı: tag okuma testi
+        std::vector<TagData> tags = reader.readMultipleTags(500);
+        if (!tags.empty()) {
+            std::cout << "📡 Tag(ler) okundu (" << tags.size() << "):" << std::endl;
+            for (const auto& tag : tags) {
+                printTag(tag);
+            }
+        } else {
+            std::cout << "No tag detected at " << dbm << " dBm" << std::endl;
+        }
+
+        // Aralarda cihazı çok yormamak için bekleme
+        std::this_thread::sleep_for(std::chrono::seconds(1));
     }
 
     reader.closePort();
+    std::cout << "\n--- TX Güç testi tamamlandı ---" << std::endl;
+
     return 0;
 }
