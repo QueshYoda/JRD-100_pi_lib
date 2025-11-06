@@ -425,7 +425,7 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
     cmd.push_back(0x00); // Address
     cmd.push_back(0x49); // Command: WRITE_TAG
 
-    // Toplam Yük (Payload) Uzunluğu (2 bytes, Big-Endian)
+    // Toplam Yük (Payload) Uzunluğu 
     cmd.push_back((payload.size() >> 8) & 0xFF);
     cmd.push_back(payload.size() & 0xFF);
 
