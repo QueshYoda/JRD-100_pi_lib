@@ -1,4 +1,4 @@
-#include "JRD100.h"
+#include "jrd100.h"
 #include "CMD.h"
 
 #include <iostream>
