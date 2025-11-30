@@ -80,9 +80,10 @@ public:
                       << rate << " attempts/s" << std::flush;
         }
 
-        // Try write operation
-        bool success = reader.writeTag(testData, membank, startAddr, password);
-        
+        std::vector<uint8_t> emptyEpc; // Boş EPC filtresi oluşturun
+
+        bool success = reader.writeTag(emptyEpc, testData, membank, startAddr, password);
+
         if (success) {
             std::cout << "\n\n";
             std::cout << "╔════════════════════════════════════════╗\n";
