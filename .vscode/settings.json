@@ -57,7 +57,9 @@
         "xlocnum": "cpp",
         "xloctime": "cpp",
         "xmemory": "cpp",
-        "xtr1common": "cpp"
+        "xtr1common": "cpp",
+        "algorithm": "cpp",
+        "mutex": "cpp"
     },
     "cmake.sourceDirectory": "C:/Users/Quesh_yoda/Desktop/JRD-100_pi_lib/JRD-100"
 }

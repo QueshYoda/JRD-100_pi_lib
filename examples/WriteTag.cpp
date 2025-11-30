@@ -1,6 +1,6 @@
-// main.cpp - İyileştirilmiş versiyon
 #include <iostream>
 #include <vector>
+#include <iomanip>
 #include "jrd100.h"
 
 int main(int argc, char* argv[]) {
