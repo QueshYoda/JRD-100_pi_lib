@@ -116,6 +116,138 @@ bool JRD100::configurePort() {
     return true;
 }
 
+bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank, 
+                      uint16_t startAddr, uint32_t accessPassword) {
+    if (!isOpen) {
+        std::cerr << "[ERROR] Port is closed.\n";
+        return false;
+    }
+
+    if (size == 0 || size % 2 != 0) {
+        std::cerr << "[ERROR] Read size must be non-zero and multiple of 2.\n";
+        return false;
+    }
+
+    std::cout << "[DEBUG] readCard çağrıldı:\n";
+    std::cout << "  Size: " << size << " bytes (" << (size/2) << " words)\n";
+    std::cout << "  Memory Bank: 0x" << std::hex << (int)membank << std::dec << "\n";
+    std::cout << "  Start Address: 0x" << std::hex << startAddr << std::dec << "\n";
+
+    // Build command - Arduino READ_STORAGE_CMD formatı
+    std::vector<uint8_t> buffer;
+    
+    buffer.push_back(0xBB);  // Start byte
+    buffer.push_back(0x00);  // Address
+    buffer.push_back(0x39);  // Read command (READ_STORAGE_CMD)
+    
+    // Length placeholder
+    size_t lengthIndex = buffer.size();
+    buffer.push_back(0x00);  // Length high
+    buffer.push_back(0x00);  // Length low
+    
+    // Access Password (4 bytes)
+    buffer.push_back((accessPassword >> 24) & 0xFF);
+    buffer.push_back((accessPassword >> 16) & 0xFF);
+    buffer.push_back((accessPassword >> 8) & 0xFF);
+    buffer.push_back(accessPassword & 0xFF);
+    
+    // Memory bank
+    buffer.push_back(membank);
+    
+    // Start address (2 bytes)
+    buffer.push_back((startAddr >> 8) & 0xFF);
+    buffer.push_back(startAddr & 0xFF);
+    
+    // Data length in words (2 bytes)
+    uint16_t dataWords = static_cast<uint16_t>(size / 2);
+    buffer.push_back((dataWords >> 8) & 0xFF);
+    buffer.push_back(dataWords & 0xFF);
+    
+    // Calculate payload length
+    uint16_t payloadLen = buffer.size() - 5;
+    buffer[lengthIndex] = (payloadLen >> 8) & 0xFF;
+    buffer[lengthIndex + 1] = payloadLen & 0xFF;
+    
+    // Calculate checksum
+    uint8_t checksum = 0;
+    for (size_t i = 1; i < buffer.size(); i++) {
+        checksum += buffer[i];
+    }
+    buffer.push_back(checksum & 0xFF);
+    buffer.push_back(0x7E);
+
+    std::cout << "[DEBUG] Read komutu: ";
+    for (auto b : buffer) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
+    }
+    std::cout << std::dec << "\n";
+
+    if (!sendCommand(buffer)) {
+        std::cerr << "[ERROR] Read command could not be sent.\n";
+        return false;
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    std::vector<uint8_t> frame = readFrame();
+    if (frame.empty()) {
+        std::cerr << "[ERROR] Read response timeout.\n";
+        return false;
+    }
+
+    std::cout << "[DEBUG] Yanıt: ";
+    for (auto b : frame) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
+    }
+    std::cout << std::dec << "\n";
+
+    if (frame.size() < 7) {
+        std::cerr << "[ERROR] Response too short.\n";
+        return false;
+    }
+
+    uint8_t responseCmd = frame[2];
+    
+    // Error check
+    if (responseCmd == 0xFF) {
+        if (frame.size() >= 6) {
+            uint8_t errorCode = frame[5];
+            std::cerr << "[ERROR] Read error, kod: 0x" << std::hex << (int)errorCode << std::dec << "\n";
+        }
+        return false;
+    }
+    
+    // Success response
+    if (responseCmd == 0x39) {
+        // Data offset 20'den başlıyor (Arduino kodundaki gibi)
+        size_t dataOffset = 20;
+        
+        if (frame.size() < dataOffset + size + 2) {
+            std::cerr << "[WARN] Frame beklenenden kısa, offset ayarlanıyor.\n";
+            if (frame.size() >= size + 2) {
+                dataOffset = frame.size() - size - 2;
+            } else {
+                std::cerr << "[ERROR] Yetersiz veri.\n";
+                return false;
+            }
+        }
+        
+        data.clear();
+        data.assign(frame.begin() + dataOffset, frame.begin() + dataOffset + size);
+        
+        std::cout << "[SUCCESS] Veri okundu: ";
+        for (auto b : data) {
+            std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
+        }
+        std::cout << std::dec << "\n";
+        
+        return true;
+    }
+    
+    std::cerr << "[ERROR] Beklenmeyen yanıt.\n";
+    return false;
+}
+
 // Compute checksum by summing buf[startIndex..endIndex] inclusive
 uint8_t JRD100::calculateChecksumRange(const std::vector<uint8_t>& buf, size_t startIndex, size_t endIndex) {
     uint32_t sum = 0;
@@ -443,6 +575,8 @@ int JRD100::getTxPower() {
 
 bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data, 
                        uint8_t membank, uint16_t startAddr, uint32_t accessPassword) {
+    (void)epc;
+    
     if (!isOpen) {
         std::cerr << "[ERROR] Port is closed.\n";
         return false;
