@@ -1,4 +1,4 @@
-// jrd100.h - Arduino koduna göre uyarlanmış
+// jrd100.h - Arduino compatible version
 #ifndef JRD100_H
 #define JRD100_H
 
@@ -24,20 +24,20 @@ public:
     bool sendCommand(const std::vector<uint8_t>& cmd);
 
     /**
-     * @brief Çoklu etiket okuma
-     * @param timeout_ms süre (ms)
-     * @return bulunan etiketler
+     * @brief Read multiple tags
+     * @param timeout_ms Duration in milliseconds
+     * @return Found tags
      */
     std::vector<TagData> readMultipleTags(int timeout_ms = 500);
 
     /**
-     * @brief Etikete veri yazar - TAM KONTROL (Arduino uyumlu)
-     * @param epc Hedef etiketi filtrelemek için EPC verisi (boş = filtre yok)
-     * @param data Yazılacak veri (2'nin katı byte)
+     * @brief Write data to tag - FULL CONTROL (Arduino compatible)
+     * @param epc EPC data for filtering target tag (empty = no filter)
+     * @param data Data to write (must be multiple of 2 bytes)
      * @param membank Memory bank (0x01=EPC, 0x02=TID, 0x03=USER, 0x00=RESERVED)
-     * @param startAddr Başlangıç adresi (word cinsinden)
-     * @param accessPassword Access password (varsayılan: 0x00000000)
-     * @return başarılı mı
+     * @param startAddr Start address (in words)
+     * @param accessPassword Access password (default: 0x00000000)
+     * @return Success status
      */
     bool writeTag(const std::vector<uint8_t>& epc, 
                   const std::vector<uint8_t>& data,
@@ -46,24 +46,24 @@ public:
                   uint32_t accessPassword);
 
     /**
-     * @brief Etikete veri yazar - BASİT KULLANIM
-     * @param epc Hedef EPC (boş = filtre yok)
-     * @param data Yazılacak veri
-     * @return başarılı mı
+     * @brief Write data to tag - SIMPLE USAGE
+     * @param epc Target EPC (empty = no filter)
+     * @param data Data to write
+     * @return Success status
      * 
-     * Varsayılanlar: USER bank (0x03), adres 0x0000, password 0x00000000
+     * Defaults: USER bank (0x03), address 0x0000, password 0x00000000
      */
     bool writeTag(const std::vector<uint8_t>& epc, 
                   const std::vector<uint8_t>& data);
 
     /**
-     * @brief Etiketten veri okur (Arduino uyumlu)
-     * @param data Okunan veriyi alacak buffer
-     * @param size Okunacak byte sayısı (2'nin katı)
+     * @brief Read data from tag (Arduino compatible)
+     * @param data Buffer to receive read data
+     * @param size Number of bytes to read (must be multiple of 2)
      * @param membank Memory bank
-     * @param startAddr Başlangıç adresi (word)
+     * @param startAddr Start address (in words)
      * @param accessPassword Access password
-     * @return başarılı mı
+     * @return Success status
      */
     bool readCard(std::vector<uint8_t>& data, 
                   size_t size,
@@ -72,15 +72,15 @@ public:
                   uint32_t accessPassword = 0x00000000);
 
     /**
-     * @brief TX gücü ayarla
+     * @brief Set TX power
      * @param power_dbm 2600 => 26.00 dBm
-     * @return başarılı mı
+     * @return Success status
      */
     bool setTxPower(uint16_t power_dbm);
 
     /**
-     * @brief TX gücünü oku
-     * @return power value (hundredths) veya -1
+     * @brief Get TX power
+     * @return Power value (in hundredths) or -1 on error
      */
     int getTxPower();
 
