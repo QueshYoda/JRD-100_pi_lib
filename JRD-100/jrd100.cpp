@@ -440,9 +440,9 @@ int JRD100::getTxPower() {
         return -1;
     }
 }
-// jrd100.cpp içindeki writeTag fonksiyonunun düzeltilmiş versiyonu
 
-bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data) {
+bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data, 
+                       uint8_t membank, uint16_t startAddr, uint32_t accessPassword) {
     if (!isOpen) {
         std::cerr << "[ERROR] Port is closed.\n";
         return false;
@@ -459,86 +459,79 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
     }
 
     std::cout << "[DEBUG] writeTag çağrıldı:\n";
-    std::cout << "  EPC Length: " << epc.size() << " bytes\n";
     std::cout << "  Data Length: " << data.size() << " bytes (" << (data.size()/2) << " words)\n";
+    std::cout << "  Memory Bank: 0x" << std::hex << (int)membank << std::dec << "\n";
+    std::cout << "  Start Address: 0x" << std::hex << startAddr << std::dec << "\n";
+    std::cout << "  Access Password: 0x" << std::hex << accessPassword << std::dec << "\n";
 
-    // Build payload - DÜZELTİLMİŞ SIRA:
-    std::vector<uint8_t> payload;
+    // Build command buffer - Arduino kodundaki gibi
+    std::vector<uint8_t> buffer;
     
-    // 1. Access Password (4 bytes) - ÖNEMLİ: 2 değil 4 byte!
-    payload.push_back(0x00);
-    payload.push_back(0x00);
-    payload.push_back(0x00);
-    payload.push_back(0x00);
-
-    // 2. EPC filter length (2 bytes big-endian)
-    uint16_t epcLen = static_cast<uint16_t>(epc.size());
-    payload.push_back((epcLen >> 8) & 0xFF);
-    payload.push_back(epcLen & 0xFF);
-
-    // 3. Memory bank (1 byte) - USER bank için 0x03
-    payload.push_back(0x03);
-
-    // 4. Start address (2 bytes - word address)
-    payload.push_back(0x00);
-    payload.push_back(0x00);
-
-    // 5. Data length in words (2 bytes)
+    // Header
+    buffer.push_back(0xBB);  // Start byte
+    buffer.push_back(0x00);  // Address
+    buffer.push_back(0x49);  // Write command (WRITE_STORAGE_CMD)
+    
+    // Length placeholder (will be filled later)
+    size_t lengthIndex = buffer.size();
+    buffer.push_back(0x00);  // Length high
+    buffer.push_back(0x00);  // Length low
+    
+    // Access Password (4 bytes) - Arduino kodundaki sıraya göre
+    buffer.push_back((accessPassword >> 24) & 0xFF);
+    buffer.push_back((accessPassword >> 16) & 0xFF);
+    buffer.push_back((accessPassword >> 8) & 0xFF);
+    buffer.push_back(accessPassword & 0xFF);
+    
+    // Memory bank (1 byte)
+    buffer.push_back(membank);
+    
+    // Start address (2 bytes) - Arduino kodunda SA (start address)
+    buffer.push_back((startAddr >> 8) & 0xFF);
+    buffer.push_back(startAddr & 0xFF);
+    
+    // Data length in words (2 bytes)
     uint16_t dataWords = static_cast<uint16_t>(data.size() / 2);
-    payload.push_back((dataWords >> 8) & 0xFF);
-    payload.push_back(dataWords & 0xFF);
-
-    // 6. Data bytes
-    payload.insert(payload.end(), data.begin(), data.end());
-
-    // 7. EPC filter bytes (if provided)
-    if (!epc.empty()) {
-        payload.insert(payload.end(), epc.begin(), epc.end());
+    buffer.push_back((dataWords >> 8) & 0xFF);
+    buffer.push_back(dataWords & 0xFF);
+    
+    // Data bytes
+    buffer.insert(buffer.end(), data.begin(), data.end());
+    
+    // Calculate payload length (everything after length field, before checksum)
+    uint16_t payloadLen = buffer.size() - 5; // Subtract header (BB 00 49 LEN_H LEN_L)
+    buffer[lengthIndex] = (payloadLen >> 8) & 0xFF;
+    buffer[lengthIndex + 1] = payloadLen & 0xFF;
+    
+    // Calculate checksum - Arduino kodundaki gibi: index 1'den itibaren topla
+    uint8_t checksum = 0;
+    for (size_t i = 1; i < buffer.size(); i++) {
+        checksum += buffer[i];
     }
+    buffer.push_back(checksum & 0xFF);
+    
+    // End byte
+    buffer.push_back(0x7E);
 
-    std::cout << "[DEBUG] Payload oluşturuldu, toplam: " << payload.size() << " bytes\n";
-
-    // Build command frame: BB 00 49 LEN_H LEN_L [payload] CHK 7E
-    std::vector<uint8_t> cmd;
-    cmd.push_back(0xBB);  // Start byte
-    cmd.push_back(0x00);  // Address
-    cmd.push_back(0x49);  // Write command
-
-    uint16_t payloadLen = static_cast<uint16_t>(payload.size());
-    cmd.push_back((payloadLen >> 8) & 0xFF);  // Length high
-    cmd.push_back(payloadLen & 0xFF);         // Length low
-
-    // Append payload
-    cmd.insert(cmd.end(), payload.begin(), payload.end());
-
-    // Checksum placeholder and end byte
-    cmd.push_back(0x00);  // Checksum - will be calculated
-    cmd.push_back(0x7E);  // End byte
-
-    // Calculate checksum: sum from index 1 to last payload byte
-    size_t checksumIndex = cmd.size() - 2;
-    cmd[checksumIndex] = calculateChecksumRange(cmd, 1, checksumIndex - 1);
-
-    std::cout << "[DEBUG] Komut hazırlandı, toplam: " << cmd.size() << " bytes\n";
+    std::cout << "[DEBUG] Komut hazırlandı, toplam: " << buffer.size() << " bytes\n";
     std::cout << "[DEBUG] Gönderilen komut: ";
-    for (auto b : cmd) {
+    for (auto b : buffer) {
         std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
     }
     std::cout << std::dec << "\n";
 
-    if (!sendCommand(cmd)) {
+    if (!sendCommand(buffer)) {
         std::cerr << "[ERROR] Write command could not be sent.\n";
         return false;
     }
 
-    // Yanıt bekleniyor - TIMEOUT ARTIRILDI
+    // Yanıt bekleniyor
     std::cout << "[DEBUG] Yanıt bekleniyor...\n";
-    std::this_thread::sleep_for(std::chrono::milliseconds(100));  // Ek bekleme
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     std::vector<uint8_t> frame = readFrame();
     if (frame.empty()) {
         std::cerr << "[ERROR] Write command acknowledgment not received (timeout).\n";
-        std::cerr << "[INFO] Okuyucunun menzilinde bir etiket olduğundan emin olun.\n";
         return false;
     }
 
@@ -555,37 +548,44 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
     }
 
     uint8_t responseCmd = frame[2];
-    uint16_t responseLen = (static_cast<uint16_t>(frame[3]) << 8) | frame[4];
     
-    // Success: BB 00 49 00 01 00 CHK 7E
-    if (responseCmd == 0x49 && responseLen == 0x01 && frame[5] == 0x00) {
-        std::cout << "[SUCCESS] Etikete yazma başarılı!\n";
-        return true;
-    }
-    
+    // Arduino kodunda: WRITE_STORAGE_ERROR[2] == buffer[2] kontrolü var
     // Error response: BB 00 FF ...
-    if (responseCmd == 0xFF && responseLen >= 0x01) {
-        uint8_t errorCode = frame[5];
-        std::cerr << "[ERROR] Okuyucu hata döndürdü: 0x" << std::hex << (int)errorCode << std::dec << "\n";
-        
-        // Yaygın hata kodları
-        switch (errorCode) {
-            case 0x15: std::cerr << "  -> Etiket bulunamadı veya menzil dışı\n"; break;
-            case 0x16: std::cerr << "  -> Etiket bellekleri erişim hatası\n"; break;
-            case 0x0F: std::cerr << "  -> Yeterli güç yok\n"; break;
-            case 0x03: std::cerr << "  -> Bellek korumalı\n"; break;
-            default: std::cerr << "  -> Bilinmeyen hata\n"; break;
+    if (responseCmd == 0xFF) {
+        if (frame.size() >= 6) {
+            uint8_t errorCode = frame[5];
+            std::cerr << "[ERROR] Write error, kod: 0x" << std::hex << (int)errorCode << std::dec << "\n";
+            
+            switch (errorCode) {
+                case 0x15: std::cerr << "  -> Etiket bulunamadı\n"; break;
+                case 0x16: std::cerr << "  -> Bellek erişim hatası\n"; break;
+                case 0x0F: std::cerr << "  -> Yeterli güç yok\n"; break;
+                case 0x03: std::cerr << "  -> Bellek korumalı\n"; break;
+                case 0x09: std::cerr << "  -> Hatalı parametre\n"; break;
+                default: std::cerr << "  -> Bilinmeyen hata\n"; break;
+            }
         }
         return false;
     }
     
-    // Write command successful but with status code
-    if (responseCmd == 0x49 && responseLen == 0x01 && frame[5] != 0x00) {
-        uint8_t statusCode = frame[5];
-        std::cerr << "[ERROR] Yazma başarısız, durum kodu: 0x" << std::hex << (int)statusCode << std::dec << "\n";
-        return false;
+    // Success: BB 00 49 00 01 00 CHK 7E
+    if (responseCmd == 0x49) {
+        if (frame.size() >= 6 && frame[5] == 0x00) {
+            std::cout << "[SUCCESS] Etikete yazma başarılı!\n";
+            return true;
+        } else if (frame.size() >= 6) {
+            uint8_t statusCode = frame[5];
+            std::cerr << "[ERROR] Yazma başarısız, durum: 0x" << std::hex << (int)statusCode << std::dec << "\n";
+            return false;
+        }
     }
     
     std::cerr << "[ERROR] Beklenmeyen yanıt formatı.\n";
     return false;
+}
+
+// Basitleştirilmiş overload - varsayılan parametrelerle
+bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data) {
+    return writeTag(epc, data, 0x03, 0x0000, 0x00000000);
+    // membank=0x03 (USER), startAddr=0x0000, accessPassword=0x00000000
 }
