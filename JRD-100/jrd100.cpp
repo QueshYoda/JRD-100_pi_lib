@@ -115,6 +115,7 @@ bool JRD100::configurePort() {
     }
     return true;
 }
+// jrd100.cpp - readCard fonksiyonu eklemesi (Arduino uyumlu)
 
 bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank, 
                       uint16_t startAddr, uint32_t accessPassword) {
@@ -128,7 +129,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
         return false;
     }
 
-    std::cout << "[DEBUG] readCard çağrıldı:\n";
+    std::cout << "[DEBUG] readCard called:\n";
     std::cout << "  Size: " << size << " bytes (" << (size/2) << " words)\n";
     std::cout << "  Memory Bank: 0x" << std::hex << (int)membank << std::dec << "\n";
     std::cout << "  Start Address: 0x" << std::hex << startAddr << std::dec << "\n";
@@ -168,7 +169,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
     buffer[lengthIndex] = (payloadLen >> 8) & 0xFF;
     buffer[lengthIndex + 1] = payloadLen & 0xFF;
     
-    // Calculate checksum
+    // Calculate checksum - Arduino: index 1'den 13'e kadar (14 öncesi)
     uint8_t checksum = 0;
     for (size_t i = 1; i < buffer.size(); i++) {
         checksum += buffer[i];
@@ -176,7 +177,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
     buffer.push_back(checksum & 0xFF);
     buffer.push_back(0x7E);
 
-    std::cout << "[DEBUG] Read komutu: ";
+    std::cout << "[DEBUG] Read command: ";
     for (auto b : buffer) {
         std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
     }
@@ -195,7 +196,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
         return false;
     }
 
-    std::cout << "[DEBUG] Yanıt: ";
+    std::cout << "[DEBUG] Response: ";
     for (auto b : frame) {
         std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
     }
@@ -208,26 +209,31 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
 
     uint8_t responseCmd = frame[2];
     
-    // Error check
+    // Error check - Arduino: READ_STORAGE_ERROR[2] == buffer[2]
     if (responseCmd == 0xFF) {
         if (frame.size() >= 6) {
             uint8_t errorCode = frame[5];
-            std::cerr << "[ERROR] Read error, kod: 0x" << std::hex << (int)errorCode << std::dec << "\n";
+            std::cerr << "[ERROR] Read error, code: 0x" << std::hex << (int)errorCode << std::dec << "\n";
         }
         return false;
     }
     
-    // Success response
+    // Success response: BB 00 39 00 XX ... [data starts at offset 20 in Arduino]
     if (responseCmd == 0x39) {
-        // Data offset 20'den başlıyor (Arduino kodundaki gibi)
+        // Arduino code: data starts at buffer[20]
+        // Frame structure: BB 00 39 LEN_H LEN_L ... [headers] ... [data@~20] ... CHK 7E
+        
+        // Calculate safe offset
+        // Typical structure: 5 byte header + ~15 bytes tag info = ~20
         size_t dataOffset = 20;
         
-        if (frame.size() < dataOffset + size + 2) {
-            std::cerr << "[WARN] Frame beklenenden kısa, offset ayarlanıyor.\n";
+        if (frame.size() < dataOffset + size + 2) { // +2 for CHK and 7E
+            std::cerr << "[WARN] Frame shorter than expected, adjusting offset.\n";
+            // Alternative: calculate backwards from end
             if (frame.size() >= size + 2) {
                 dataOffset = frame.size() - size - 2;
             } else {
-                std::cerr << "[ERROR] Yetersiz veri.\n";
+                std::cerr << "[ERROR] Insufficient data.\n";
                 return false;
             }
         }
@@ -235,7 +241,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
         data.clear();
         data.assign(frame.begin() + dataOffset, frame.begin() + dataOffset + size);
         
-        std::cout << "[SUCCESS] Veri okundu: ";
+        std::cout << "[SUCCESS] Data read: ";
         for (auto b : data) {
             std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
         }
@@ -244,10 +250,9 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
         return true;
     }
     
-    std::cerr << "[ERROR] Beklenmeyen yanıt.\n";
+    std::cerr << "[ERROR] Unexpected response.\n";
     return false;
 }
-
 // Compute checksum by summing buf[startIndex..endIndex] inclusive
 uint8_t JRD100::calculateChecksumRange(const std::vector<uint8_t>& buf, size_t startIndex, size_t endIndex) {
     uint32_t sum = 0;
@@ -572,11 +577,11 @@ int JRD100::getTxPower() {
         return -1;
     }
 }
+// jrd100.cpp içindeki writeTag fonksiyonunun düzeltilmiş versiyonu
 
+// Arduino koduna göre düzeltilmiş writeTag fonksiyonu
 bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data, 
                        uint8_t membank, uint16_t startAddr, uint32_t accessPassword) {
-    (void)epc;
-    
     if (!isOpen) {
         std::cerr << "[ERROR] Port is closed.\n";
         return false;
@@ -592,7 +597,7 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
         return false;
     }
 
-    std::cout << "[DEBUG] writeTag çağrıldı:\n";
+    std::cout << "[DEBUG] writeTag called:\n";
     std::cout << "  Data Length: " << data.size() << " bytes (" << (data.size()/2) << " words)\n";
     std::cout << "  Memory Bank: 0x" << std::hex << (int)membank << std::dec << "\n";
     std::cout << "  Start Address: 0x" << std::hex << startAddr << std::dec << "\n";
