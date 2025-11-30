@@ -1,77 +1,67 @@
+// main.cpp - İyileştirilmiş versiyon
 #include <iostream>
 #include <vector>
-#include <string>
-#include <cstdint>
-#include <iomanip>
-#include "jrd100.h" 
+#include "jrd100.h"
 
 int main(int argc, char* argv[]) {
-    // 1. Port adını komut satırından al
     if (argc < 2) {
         std::cerr << "Kullanım: " << argv[0] << " /dev/serial0" << std::endl;
-        std::cerr << "Lütfen seri port adını argüman olarak belirtin." << std::endl;
         return 1;
     }
-    std::string port = argv[1];
-
-    // 2. JRD100 sınıfını başlat ve portu aç
-    JRD100 reader(port);
-    if (!reader.openPort()) {
-        std::cerr << "HATA: Port açılamadı: " << port << std::endl;
-        return 1;
-    }
-
-    std::cout << "Port başarıyla açıldı: " << port << std::endl;
-    std::cout << "------------------------------------------" << std::endl;
-
-    // --- Yazma İşlemi ---
-
-    // 3. YAZILACAK VERİ:
-    // 4 byte'lık örnek veri. jrd100.cpp'deki implementasyona göre
-    // veri uzunluğu 2'nin katı (word) olmalıdır.
-    std::vector<uint8_t> dataToWrite = {0x12, 0x34, 0x56, 0x78 , 0x9A, 0xBC , 0xB6, 0xA8 }; // 8 byte = 4 word
-
-    // 4. EPC FİLTRESİ (İsteğe bağlı):
-    // Hangi etikete yazılacağını belirler.
-    //
-    // DİKKAT: Boş bir vektör ({}), okuyucunun gördüğü İLK etikete yazmaya çalışır.
-    // Bu, test için kolaylık sağlar ancak gerçek bir uygulamada tehlikeli olabilir.
-    //
-    // Gerçek bir uygulamada, yazmak istediğiniz etiketin tam EPC'sini (örn. 12 byte)
-    // okuyup buraya girmelisiniz.
-    // Örnek: std::vector<uint8_t> epcFilter = {0x30, 0x39, 0x60, ... , 0x96};
-    //
-    // Şimdilik test için boş filtre kullanıyoruz (ilk gördüğüne yaz):
-    std::vector<uint8_t> epcFilter = {}; 
-
-    std::cout << "Etikete yazma denemesi başlatılıyor..." << std::endl;
-    std::cout << "  Yazılacak Veri (HEX): ";
-    for(auto b : dataToWrite) {
-        std::cout << "0x" << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
-    }
-    std::cout << std::dec << std::endl;
     
-    if (epcFilter.empty()) {
-        std::cout << "  EPC Filtresi: YOK (Algılanan ilk etikete yazılacak)" << std::endl;
-        std::cout << "  UYARI: Lütfen okuyucunun menzilinde sadece 1 etiket olduğundan emin olun!" << std::endl;
-    } else {
-        std::cout << "  EPC Filtresi: Var (Sadece bu EPC'ye sahip etikete yazılacak)" << std::endl;
+    std::string port = argv[1];
+    JRD100 reader(port);
+    
+    if (!reader.openPort()) {
+        std::cerr << "Port açılamadı!" << std::endl;
+        return 1;
     }
 
-
-    // 5. Yazma fonksiyonunu çağır
-    if (reader.writeTag(epcFilter, dataToWrite)) {
-        std::cout << "\nBAŞARILI: Etikete yazma işlemi tamamlandı." << std::endl;
-        std::cout << "Veriyi doğrulamak için okuma programınızı çalıştırabilirsiniz." << std::endl;
-    } else {
-        std::cerr << "\nHATA: Etikete yazma işlemi başarısız oldu." << std::endl;
-        std::cerr << "Okuyucudan gelen cevabı veya port durumunu kontrol edin." << std::endl;
+    // ÖNCELİKLE ETİKET OKUYUN
+    std::cout << "\n=== ADIM 1: Etiket Tarama ===\n";
+    auto tags = reader.readMultipleTags(1000);
+    
+    if (tags.empty()) {
+        std::cerr << "HATA: Hiç etiket bulunamadı!\n";
+        std::cerr << "Lütfen bir etiketin menzilde olduğundan emin olun.\n";
+        reader.closePort();
+        return 1;
     }
+    
+    std::cout << "Bulunan etiket sayısı: " << tags.size() << "\n";
+    
+    // İlk etiketi kullan
+    std::vector<uint8_t> targetEpc = tags[0].epc;
+    std::cout << "Hedef EPC: ";
+    for (auto b : targetEpc) {
+        std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
+    }
+    std::cout << std::dec << "\n";
 
-    // 6. Portu kapat
-    std::cout << "------------------------------------------" << std::endl;
+    // YAZILACAK VERİ
+    std::vector<uint8_t> dataToWrite = {0x12, 0x34, 0x56, 0x78}; // 2 word
+    
+    std::cout << "\n=== ADIM 2: Etikete Yazma ===\n";
+    
+    // ÖNCE TX GÜCÜNÜ KONTROL EDİN
+    int currentPower = reader.getTxPower();
+    if (currentPower > 0) {
+        std::cout << "Mevcut güç: " << (currentPower/100.0) << " dBm\n";
+    }
+    
+    // Güç düşükse artırın
+    if (currentPower < 2000) {  // 20 dBm'den düşükse
+        std::cout << "Güç artırılıyor: 25 dBm\n";
+        reader.setTxPower(2500);  // 25 dBm
+    }
+    
+    // YAZMA İŞLEMİ
+    if (reader.writeTag(targetEpc, dataToWrite)) {
+        std::cout << "\n✓ BAŞARILI: Veri yazıldı!\n";
+    } else {
+        std::cerr << "\n✗ BAŞARISIZ: Yazma hatası!\n";
+    }
+    
     reader.closePort();
-    std::cout << "Port kapatıldı." << std::endl;
-
     return 0;
 }
