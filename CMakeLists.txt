@@ -20,7 +20,10 @@ target_link_libraries(ReadMultipleTag PRIVATE JRD100)
 add_executable(MultiplePollingIncTx examples/MultiplePollingIncTx.cpp)
 target_link_libraries(MultiplePollingIncTx PRIVATE JRD100)
 
+add_executable(FindMemoryAccessPassword examples/FindMemoryAccessPassword.cpp)
+target_link_libraries(FindMemoryAccessPassword PRIVATE JRD100)
 
 set_target_properties(WriteTag PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set_target_properties(ReadMultipleTag PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 set_target_properties(MultiplePollingIncTx PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+set_target_properties(FindMemoryAccessPassword PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
