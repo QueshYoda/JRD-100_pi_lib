@@ -54,7 +54,7 @@ JRD100::~JRD100() {
 bool JRD100::openPort() {
     serialFd = open(portName.c_str(), O_RDWR | O_NOCTTY | O_NDELAY);
     if (serialFd < 0) {
-        std::cerr << "[ERROR] Port açılamadı: " << portName << " (" << strerror(errno) << ")\n";
+        std::cerr << "[ERROR] Could not open port: " << portName << " (" << strerror(errno) << ")\n";
         return false;
     }
     // Set blocking
@@ -115,8 +115,8 @@ bool JRD100::configurePort() {
     }
     return true;
 }
-// jrd100.cpp - readCard fonksiyonu eklemesi (Arduino uyumlu)
 
+// readCard function (Arduino compatible)
 bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank, 
                       uint16_t startAddr, uint32_t accessPassword) {
     if (!isOpen) {
@@ -134,7 +134,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
     std::cout << "  Memory Bank: 0x" << std::hex << (int)membank << std::dec << "\n";
     std::cout << "  Start Address: 0x" << std::hex << startAddr << std::dec << "\n";
 
-    // Build command - Arduino READ_STORAGE_CMD formatı
+    // Build command - Arduino READ_STORAGE_CMD format
     std::vector<uint8_t> buffer;
     
     buffer.push_back(0xBB);  // Start byte
@@ -169,7 +169,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
     buffer[lengthIndex] = (payloadLen >> 8) & 0xFF;
     buffer[lengthIndex + 1] = payloadLen & 0xFF;
     
-    // Calculate checksum - Arduino: index 1'den 13'e kadar (14 öncesi)
+    // Calculate checksum
     uint8_t checksum = 0;
     for (size_t i = 1; i < buffer.size(); i++) {
         checksum += buffer[i];
@@ -209,7 +209,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
 
     uint8_t responseCmd = frame[2];
     
-    // Error check - Arduino: READ_STORAGE_ERROR[2] == buffer[2]
+    // Error check
     if (responseCmd == 0xFF) {
         if (frame.size() >= 6) {
             uint8_t errorCode = frame[5];
@@ -218,18 +218,13 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
         return false;
     }
     
-    // Success response: BB 00 39 00 XX ... [data starts at offset 20 in Arduino]
+    // Success response
     if (responseCmd == 0x39) {
-        // Arduino code: data starts at buffer[20]
-        // Frame structure: BB 00 39 LEN_H LEN_L ... [headers] ... [data@~20] ... CHK 7E
-        
-        // Calculate safe offset
-        // Typical structure: 5 byte header + ~15 bytes tag info = ~20
+        // Data starts at offset 20 (Arduino compatible)
         size_t dataOffset = 20;
         
-        if (frame.size() < dataOffset + size + 2) { // +2 for CHK and 7E
+        if (frame.size() < dataOffset + size + 2) {
             std::cerr << "[WARN] Frame shorter than expected, adjusting offset.\n";
-            // Alternative: calculate backwards from end
             if (frame.size() >= size + 2) {
                 dataOffset = frame.size() - size - 2;
             } else {
@@ -253,6 +248,7 @@ bool JRD100::readCard(std::vector<uint8_t>& data, size_t size, uint8_t membank,
     std::cerr << "[ERROR] Unexpected response.\n";
     return false;
 }
+
 // Compute checksum by summing buf[startIndex..endIndex] inclusive
 uint8_t JRD100::calculateChecksumRange(const std::vector<uint8_t>& buf, size_t startIndex, size_t endIndex) {
     uint32_t sum = 0;
@@ -303,7 +299,6 @@ std::vector<uint8_t> JRD100::readFrame() {
         auto now = std::chrono::steady_clock::now();
         if (std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count() > 1000) {
             // timeout
-            // keep buffer small
             if (readBuffer.size() > 4096) readBuffer.clear();
             return {};
         }
@@ -336,7 +331,6 @@ std::vector<uint8_t> JRD100::readFrame() {
 
         // need at least: BB, ADDR, CMD, LEN_H, LEN_L, ... , CHK, 7E
         if (readBuffer.size() < 7) {
-            // read more
             uint8_t tempBuf[256];
             ssize_t len = read(serialFd, tempBuf, sizeof(tempBuf));
             if (len > 0) readBuffer.insert(readBuffer.end(), tempBuf, tempBuf + len);
@@ -348,7 +342,6 @@ std::vector<uint8_t> JRD100::readFrame() {
         uint16_t dataLen = (static_cast<uint16_t>(readBuffer[3]) << 8) | static_cast<uint16_t>(readBuffer[4]);
         size_t fullFrameLen = 1 /*BB*/ + 1 /*addr*/ + 1 /*cmd*/ + 2 /*len*/ + dataLen + 1 /*chk*/ + 1 /*7E*/;
         if (readBuffer.size() < fullFrameLen) {
-            // need more bytes
             uint8_t tempBuf[256];
             ssize_t len = read(serialFd, tempBuf, sizeof(tempBuf));
             if (len > 0) readBuffer.insert(readBuffer.end(), tempBuf, tempBuf + len);
@@ -358,7 +351,6 @@ std::vector<uint8_t> JRD100::readFrame() {
 
         // Now we have at least one full frame; verify end byte
         if (readBuffer[fullFrameLen - 1] != 0x7E) {
-            // malformed; drop this start byte and retry
             readBuffer.erase(readBuffer.begin());
             std::cerr << "[WARN] Frame end byte mismatch, resyncing.\n";
             continue;
@@ -366,12 +358,10 @@ std::vector<uint8_t> JRD100::readFrame() {
 
         // Extract frame
         std::vector<uint8_t> frame(readBuffer.begin(), readBuffer.begin() + fullFrameLen);
-        // remove from buffer
         readBuffer.erase(readBuffer.begin(), readBuffer.begin() + fullFrameLen);
 
-        // checksum index:
-        size_t checksumIndex = 1 + 1 + 1 + 2 + dataLen; // start=0 => checksum at this index
-        // (calculation range is from index 1 (ADDR) to checksumIndex-1)
+        // checksum index
+        size_t checksumIndex = 1 + 1 + 1 + 2 + dataLen;
         if (checksumIndex >= frame.size()) {
             std::cerr << "[WARN] Unexpected frame size while checksum indexing.\n";
             continue;
@@ -380,7 +370,7 @@ std::vector<uint8_t> JRD100::readFrame() {
         uint8_t expectedChk = frame[checksumIndex];
         uint8_t calcChk = calculateChecksumRange(frame, 1, checksumIndex - 1);
         if (expectedChk != calcChk) {
-            std::cerr << "[WARN] Checksum mistake! Expected: 0x" << std::hex << (int)expectedChk
+            std::cerr << "[WARN] Checksum mismatch! Expected: 0x" << std::hex << (int)expectedChk
                       << " Calculated: 0x" << (int)calcChk << std::dec << "\n";
             continue;
         }
@@ -393,7 +383,7 @@ std::vector<uint8_t> JRD100::readFrame() {
     }
 }
 
-// Çoklu etiket okuma
+// Multiple tag reading
 std::vector<TagData> JRD100::readMultipleTags(int timeout_ms) {
     std::vector<TagData> tags;
     std::vector<std::vector<uint8_t>> seenEpcs;
@@ -401,7 +391,7 @@ std::vector<TagData> JRD100::readMultipleTags(int timeout_ms) {
     // Send multi read command
     std::vector<uint8_t> cmd(CMD_MULTI_READ, CMD_MULTI_READ + sizeof(CMD_MULTI_READ));
     if (!sendCommand(cmd)) {
-        std::cerr << "[ERROR] Çoklu okuma komutu gönderilemedi.\n";
+        std::cerr << "[ERROR] Could not send multiple read command.\n";
         return tags;
     }
 
@@ -415,21 +405,19 @@ std::vector<TagData> JRD100::readMultipleTags(int timeout_ms) {
 
         std::vector<uint8_t> frame = readFrame();
         if (frame.empty()) {
-            // no frame in this iteration
             continue;
         }
 
-        if (frame.size() < 7) continue; // at least header
+        if (frame.size() < 7) continue;
 
         uint8_t cmd_code = frame[2];
 
         if (cmd_code == 0x22) { // inventory response
             uint16_t dataLen = (static_cast<uint16_t>(frame[3]) << 8) | static_cast<uint16_t>(frame[4]);
             if (dataLen < 5) {
-                std::cerr << "[WARN] Etiket veri paketi çok kısa (dataLen=" << dataLen << ").\n";
+                std::cerr << "[WARN] Tag data packet too short (dataLen=" << dataLen << ").\n";
                 continue;
             }
-            // data starts at index 5
             size_t payloadStart = 5;
             if (payloadStart + dataLen > frame.size()) {
                 std::cerr << "[WARN] Frame truncated.\n";
@@ -438,25 +426,19 @@ std::vector<TagData> JRD100::readMultipleTags(int timeout_ms) {
             const uint8_t* dataPayload = frame.data() + payloadStart;
 
             TagData t;
-            // RSSI - first byte
             t.rssi = static_cast<int>(dataPayload[0]);
-            // If you want approximate dBm: t.rssi = -static_cast<int>(dataPayload[0]) / 2;
 
-            // PC (2 bytes) is dataPayload[1], dataPayload[2]
-            // EPC starts at dataPayload[3]
-            size_t epcBytes = dataLen; // total dataLen
+            size_t epcBytes = dataLen;
             if (epcBytes <= 3) {
                 std::cerr << "[WARN] EPC length zero.\n";
                 continue;
             }
 
-            size_t epcLen = epcBytes - 5; // subtract RSSI(1) + PC(2) + CRC(2) => left is EPC
-            // If CRC may not always be included, clamp
+            size_t epcLen = epcBytes - 5;
             if (epcLen > 0 && (3 + epcLen) <= dataLen) {
                 size_t epcStartIndex = payloadStart + 3;
                 t.epc.assign(frame.begin() + epcStartIndex, frame.begin() + epcStartIndex + epcLen);
             } else {
-                // Fallback: try to take up to 12 bytes (as older assumption)
                 size_t fallback = std::min<size_t>(12, (dataLen > 3 ? dataLen - 3 : 0));
                 size_t epcStartIndex = payloadStart + 3;
                 t.epc.assign(frame.begin() + epcStartIndex, frame.begin() + epcStartIndex + fallback);
@@ -478,20 +460,13 @@ std::vector<TagData> JRD100::readMultipleTags(int timeout_ms) {
                 printHexVec(t.epc);
                 std::cout << " | RSSI: " << t.rssi << std::endl;
             }
-        } else if (cmd_code == 0xFF) {
-            // command ack or error - ignore for now or log
-            // optional: parse error code at frame[5]
         }
-        // other cmd codes can be handled if needed
     }
 
     // stop reading
-    std::cout << "[INFO] Okuma süresi doldu. Durdurma komutu gönderiliyor.\n";
+    std::cout << "[INFO] Read timeout. Sending stop command.\n";
     std::vector<uint8_t> stopCmd(CMD_STOP_MULTI_READ, CMD_STOP_MULTI_READ + sizeof(CMD_STOP_MULTI_READ));
     sendCommand(stopCmd);
-
-    // optionally read and discard final ack(s)
-    // readFrame();
 
     return tags;
 }
@@ -503,7 +478,6 @@ bool JRD100::setTxPower(uint16_t power_dbm) {
         return false;
     }
 
-    // build command: BB 00 B6 00 02 [P_H] [P_L] [CHK] 7E
     std::vector<uint8_t> cmd;
     cmd.push_back(0xBB);
     cmd.push_back(0x00);
@@ -512,30 +486,27 @@ bool JRD100::setTxPower(uint16_t power_dbm) {
     cmd.push_back(0x02);
     cmd.push_back((power_dbm >> 8) & 0xFF);
     cmd.push_back(power_dbm & 0xFF);
-    // placeholder for checksum
     cmd.push_back(0x00);
     cmd.push_back(0x7E);
 
-    // checksum is sum of bytes from index 1 (ADDR) to last payload byte (index 6)
     cmd[7] = calculateChecksumRange(cmd, 1, 6);
 
     if (!sendCommand(cmd)) {
-        std::cerr << "[ERROR] TX power command not send.\n";
+        std::cerr << "[ERROR] TX power command not sent.\n";
         return false;
     }
 
     std::vector<uint8_t> frame = readFrame();
     if (frame.empty()) {
-        std::cerr << "[ERROR] TX güç ayarı onayı gelmedi.\n";
+        std::cerr << "[ERROR] TX power set acknowledgment not received.\n";
         return false;
     }
 
-    // Expect: BB 00 B6 00 01 00 CHK 7E
     if (frame.size() >= 7 && frame[2] == 0xB6 && frame[4] == 0x01 && frame[5] == 0x00) {
-        std::cout << "[INFO] TX Gücü ayarlandı: " << std::fixed << std::setprecision(2) << (power_dbm / 100.0) << " dBm\n";
+        std::cout << "[INFO] TX Power set to: " << std::fixed << std::setprecision(2) << (power_dbm / 100.0) << " dBm\n";
         return true;
     } else {
-        std::cerr << "[ERROR] TX güç ayarı başarısız oldu. Cevap: ";
+        std::cerr << "[ERROR] TX power set failed. Response: ";
         printHexVec(frame);
         std::cout << std::endl;
         return false;
@@ -545,43 +516,41 @@ bool JRD100::setTxPower(uint16_t power_dbm) {
 // getTxPower
 int JRD100::getTxPower() {
     if (!isOpen) {
-        std::cerr << "[ERROR] Port açık değil, TX gücü okunamıyor.\n";
+        std::cerr << "[ERROR] Port is not open, cannot read TX power.\n";
         return -1;
     }
 
-    // build: BB 00 B7 00 00 [CHK] 7E
     std::vector<uint8_t> cmd = {0xBB, 0x00, 0xB7, 0x00, 0x00, 0x00, 0x7E};
-    // checksum at index 5 = sum of index1..4
     cmd[5] = calculateChecksumRange(cmd, 1, 4);
 
     if (!sendCommand(cmd)) {
-        std::cerr << "[ERROR] TX güç okuma komutu gönderilemedi.\n";
+        std::cerr << "[ERROR] TX power read command could not be sent.\n";
         return -1;
     }
 
     std::vector<uint8_t> frame = readFrame();
     if (frame.empty()) {
-        std::cerr << "[ERROR] TX güç okuma cevabı gelmedi.\n";
+        std::cerr << "[ERROR] TX power read response not received.\n";
         return -1;
     }
 
-    // Expect: BB 00 B7 00 02 [P_H] [P_L] [CHK] 7E
     if (frame.size() >= 8 && frame[2] == 0xB7 && frame[4] == 0x02) {
         uint16_t power_dbm = (static_cast<uint16_t>(frame[5]) << 8) | static_cast<uint16_t>(frame[6]);
-        std::cout << "[INFO] Mevcut TX Gücü: " << std::fixed << std::setprecision(2) << (power_dbm / 100.0) << " dBm\n";
+        std::cout << "[INFO] Current TX Power: " << std::fixed << std::setprecision(2) << (power_dbm / 100.0) << " dBm\n";
         return static_cast<int>(power_dbm);
     } else {
-        std::cerr << "[ERROR] TX güç okuma başarısız oldu. Cevap: ";
+        std::cerr << "[ERROR] TX power read failed. Response: ";
         printHexVec(frame);
         std::cout << std::endl;
         return -1;
     }
 }
-// jrd100.cpp içindeki writeTag fonksiyonunun düzeltilmiş versiyonu
 
-// Arduino koduna göre düzeltilmiş writeTag fonksiyonu
+// writeTag function (Arduino compatible)
 bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data, 
                        uint8_t membank, uint16_t startAddr, uint32_t accessPassword) {
+    (void)epc;  // Suppress unused parameter warning
+    
     if (!isOpen) {
         std::cerr << "[ERROR] Port is closed.\n";
         return false;
@@ -603,57 +572,45 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
     std::cout << "  Start Address: 0x" << std::hex << startAddr << std::dec << "\n";
     std::cout << "  Access Password: 0x" << std::hex << accessPassword << std::dec << "\n";
 
-    // Build command buffer - Arduino kodundaki gibi
     std::vector<uint8_t> buffer;
     
-    // Header
-    buffer.push_back(0xBB);  // Start byte
-    buffer.push_back(0x00);  // Address
-    buffer.push_back(0x49);  // Write command (WRITE_STORAGE_CMD)
+    buffer.push_back(0xBB);
+    buffer.push_back(0x00);
+    buffer.push_back(0x49);
     
-    // Length placeholder (will be filled later)
     size_t lengthIndex = buffer.size();
-    buffer.push_back(0x00);  // Length high
-    buffer.push_back(0x00);  // Length low
+    buffer.push_back(0x00);
+    buffer.push_back(0x00);
     
-    // Access Password (4 bytes) - Arduino kodundaki sıraya göre
     buffer.push_back((accessPassword >> 24) & 0xFF);
     buffer.push_back((accessPassword >> 16) & 0xFF);
     buffer.push_back((accessPassword >> 8) & 0xFF);
     buffer.push_back(accessPassword & 0xFF);
     
-    // Memory bank (1 byte)
     buffer.push_back(membank);
     
-    // Start address (2 bytes) - Arduino kodunda SA (start address)
     buffer.push_back((startAddr >> 8) & 0xFF);
     buffer.push_back(startAddr & 0xFF);
     
-    // Data length in words (2 bytes)
     uint16_t dataWords = static_cast<uint16_t>(data.size() / 2);
     buffer.push_back((dataWords >> 8) & 0xFF);
     buffer.push_back(dataWords & 0xFF);
     
-    // Data bytes
     buffer.insert(buffer.end(), data.begin(), data.end());
     
-    // Calculate payload length (everything after length field, before checksum)
-    uint16_t payloadLen = buffer.size() - 5; // Subtract header (BB 00 49 LEN_H LEN_L)
+    uint16_t payloadLen = buffer.size() - 5;
     buffer[lengthIndex] = (payloadLen >> 8) & 0xFF;
     buffer[lengthIndex + 1] = payloadLen & 0xFF;
     
-    // Calculate checksum - Arduino kodundaki gibi: index 1'den itibaren topla
     uint8_t checksum = 0;
     for (size_t i = 1; i < buffer.size(); i++) {
         checksum += buffer[i];
     }
     buffer.push_back(checksum & 0xFF);
-    
-    // End byte
     buffer.push_back(0x7E);
 
-    std::cout << "[DEBUG] Komut hazırlandı, toplam: " << buffer.size() << " bytes\n";
-    std::cout << "[DEBUG] Gönderilen komut: ";
+    std::cout << "[DEBUG] Command prepared, total: " << buffer.size() << " bytes\n";
+    std::cout << "[DEBUG] Sending command: ";
     for (auto b : buffer) {
         std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
     }
@@ -664,8 +621,7 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
         return false;
     }
 
-    // Yanıt bekleniyor
-    std::cout << "[DEBUG] Yanıt bekleniyor...\n";
+    std::cout << "[DEBUG] Waiting for response...\n";
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     
     std::vector<uint8_t> frame = readFrame();
@@ -674,13 +630,12 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
         return false;
     }
 
-    std::cout << "[DEBUG] Alınan yanıt: ";
+    std::cout << "[DEBUG] Received response: ";
     for (auto b : frame) {
         std::cout << std::hex << std::setw(2) << std::setfill('0') << (int)b << " ";
     }
     std::cout << std::dec << "\n";
 
-    // Response analysis
     if (frame.size() < 7) {
         std::cerr << "[ERROR] Response too short: " << frame.size() << " bytes\n";
         return false;
@@ -688,43 +643,39 @@ bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t
 
     uint8_t responseCmd = frame[2];
     
-    // Arduino kodunda: WRITE_STORAGE_ERROR[2] == buffer[2] kontrolü var
-    // Error response: BB 00 FF ...
     if (responseCmd == 0xFF) {
         if (frame.size() >= 6) {
             uint8_t errorCode = frame[5];
-            std::cerr << "[ERROR] Write error, kod: 0x" << std::hex << (int)errorCode << std::dec << "\n";
+            std::cerr << "[ERROR] Write error, code: 0x" << std::hex << (int)errorCode << std::dec << "\n";
             
             switch (errorCode) {
-                case 0x15: std::cerr << "  -> Etiket bulunamadı\n"; break;
-                case 0x16: std::cerr << "  -> Bellek erişim hatası\n"; break;
-                case 0x0F: std::cerr << "  -> Yeterli güç yok\n"; break;
-                case 0x03: std::cerr << "  -> Bellek korumalı\n"; break;
-                case 0x09: std::cerr << "  -> Hatalı parametre\n"; break;
-                default: std::cerr << "  -> Bilinmeyen hata\n"; break;
+                case 0x15: std::cerr << "  -> Tag not found\n"; break;
+                case 0x16: std::cerr << "  -> Memory access error\n"; break;
+                case 0x0F: std::cerr << "  -> Insufficient power\n"; break;
+                case 0x03: std::cerr << "  -> Memory protected\n"; break;
+                case 0x09: std::cerr << "  -> Invalid parameter\n"; break;
+                default: std::cerr << "  -> Unknown error\n"; break;
             }
         }
         return false;
     }
     
-    // Success: BB 00 49 00 01 00 CHK 7E
     if (responseCmd == 0x49) {
         if (frame.size() >= 6 && frame[5] == 0x00) {
-            std::cout << "[SUCCESS] Etikete yazma başarılı!\n";
+            std::cout << "[SUCCESS] Tag write successful!\n";
             return true;
         } else if (frame.size() >= 6) {
             uint8_t statusCode = frame[5];
-            std::cerr << "[ERROR] Yazma başarısız, durum: 0x" << std::hex << (int)statusCode << std::dec << "\n";
+            std::cerr << "[ERROR] Write failed, status: 0x" << std::hex << (int)statusCode << std::dec << "\n";
             return false;
         }
     }
     
-    std::cerr << "[ERROR] Beklenmeyen yanıt formatı.\n";
+    std::cerr << "[ERROR] Unexpected response format.\n";
     return false;
 }
 
-// Basitleştirilmiş overload - varsayılan parametrelerle
+// Simplified overload with default parameters
 bool JRD100::writeTag(const std::vector<uint8_t>& epc, const std::vector<uint8_t>& data) {
     return writeTag(epc, data, 0x03, 0x0000, 0x00000000);
-    // membank=0x03 (USER), startAddr=0x0000, accessPassword=0x00000000
 }
