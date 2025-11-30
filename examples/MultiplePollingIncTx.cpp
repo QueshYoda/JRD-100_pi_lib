@@ -35,9 +35,9 @@ int main(int argc, char** argv) {
 
         bool ok = reader.setTxPower(power_setting);
         if (ok) {
-            std::cout << "✅ Güç başarıyla ayarlandı: " << dbm << " dBm" << std::endl;
+            std::cout << "Güç başarıyla ayarlandı: " << dbm << " dBm" << std::endl;
         } else {
-            std::cout << "❌ Ayarlama başarısız: " << dbm << " dBm" << std::endl;
+            std::cout << "Ayarlama başarısız: " << dbm << " dBm" << std::endl;
         }
 
         // Donanımın stabilize olması için biraz bekle
