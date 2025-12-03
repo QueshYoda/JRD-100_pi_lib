@@ -1,161 +1,220 @@
-# JRD-100 Pi Lib
+# JRD-100 UHF RFID Reader Library for Raspberry Pi
 
-A small, lightweight C++ library to operate the JRD-100 UHF RFID reader from a Raspberry Pi (or any Linux system) over a serial port. The library handles framing, checksum validation, simple APIs to read tags, and basic reader configuration.
+A comprehensive C++ library for interfacing with the JRD-100 UHF RFID reader on Raspberry Pi. This library provides full control over tag reading, writing, and reader configuration.
 
----
-
-## Table of contents
-- Overview
-- Features
-- Requirements
-- Build / Install
-- Usage (examples)
-- Library API (summary)
-- Serial protocol notes
-- Troubleshooting
-- Contributing
-- License
-
----
-
-## Overview
-This project provides:
-- A C++ library (libJRD100.a / header files) to communicate with JRD-100 RFID readers.
-- Example command-line tools demonstrating common operations (read tags, increase tx power, etc.).
-- CMake-based build system for Linux (tested on Raspberry Pi).
-
----
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi-red.svg)](https://www.raspberrypi.org/)
+[![C++](https://img.shields.io/badge/C%2B%2B-11-blue.svg)](https://isocpp.org/)
 
 ## Features
-- Serial transport abstraction (support /dev/serial0, /dev/ttyUSB0, etc.)
-- Automatic frame parsing and checksum validation
-- Read multiple tags in a single call (`ReadMultipleTag`)
-- Adjust transmit power (`setTxPower`, `getTxPower`)
-- Minimal dependencies; uses standard C++17 and POSIX serial APIs
-- Example programs and simple error reporting
 
----
+- **Multiple Tag Reading** - Scan and inventory multiple RFID tags simultaneously
+- **Tag Writing** - Write data to EPC, USER, TID, and RESERVED memory banks
+- **Tag Reading** - Read data from any memory bank with access password support
+- **Access Password Finder** - Intelligent brute-force tool to discover tag passwords
+- **TX Power Control** - Adjust reader transmission power
+- **Thread-Safe Operations** - Mutex-protected serial communication
+- **Comprehensive Error Handling** - Detailed error codes and status messages
+- **Arduino Compatible** - Protocol implementations match Arduino libraries
 
-## Requirements
-- Linux system (Raspberry Pi recommended)
-- JRD-100 (or compatible) UHF RFID reader
-- C++17 compiler (g++ or clang++)
-- CMake 3.10+
-- make
-- Permission to access the serial device (sudo or appropriate udev rule)
+## Hardware Requirements
 
----
+- Raspberry Pi (any model with UART support)
+- JRD-100 UHF RFID Reader Module
+- EPC Gen2 (ISO 18000-6C) compatible RFID tags
+- Serial connection (USB or GPIO UART)
 
-## Build / Install
-Clone the repository and build:
+### Connection Options
 
-git clone https://github.com/QueshYoda/JRD-100_pi_lib.git
-cd JRD-100_pi_lib
+**USB Connection:**
+- Connect JRD-100 via USB to Raspberry Pi
+- Default port: `/dev/ttyUSB0`
 
-mkdir build
-cd build
-cmake ..
-make
+**GPIO UART Connection:**
+- JRD-100 TX → Pi RX (GPIO 15)
+- JRD-100 RX → Pi TX (GPIO 14)
+- JRD-100 GND → Pi GND
+- JRD-100 VCC → Pi 5V
+- Default port: `/dev/serial0`
 
-Binaries and example programs will be placed in `build/bin/`. The static library and headers will be in `build/lib` and `build/include` (depending on project layout).
+## Installation
 
----
+### Prerequisites
 
-## Usage (examples)
-Most example binaries require root (or serial-device access) to open the serial port.
+Install required packages on Raspberry Pi.
 
-- Read multiple tags (default):
-  sudo ./build/bin/ReadMultipleTag /dev/serial0
+### Build Steps
 
-- Increase transmit power then poll:
-  sudo ./build/bin/MultiplePollingIncTx /dev/serial0
+1. Clone the repository
+2. Create build directory
+3. Run CMake configuration
+4. Compile with make
 
-- Show usage:
-  ./build/bin/ReadMultipleTag --help
+### Available Programs
 
-Replace `/dev/serial0` with your actual serial device (e.g., `/dev/ttyUSB0`). If you prefer not to run as root, add a udev rule to grant access to your user or add your user to the `dialout` group.
+After building, the following executables are created:
 
----
+- **ReadMultipleTag** - Scan for multiple tags
+- **WriteTag** - Write data to tags
+- **MultiplePollingIncTx** - Continuous scanning with TX power adjustment
+- **FindMemoryAccessPassword** - Discover tag access passwords
 
-## Library API (summary)
-(This is a high-level summary — refer to header files in `include/` for exact prototypes.)
+## Usage
 
-- JRD100::Jrd100Serial(port, baudrate)
-  - Constructor opens the serial port and configures baud/flow settings.
+### Reading Tags
 
-- bool connect()
-  - Open and initialize connection to reader.
+Scan for RFID tags within range and display their EPC codes and signal strength.
 
-- void disconnect()
-  - Close serial port.
+### Writing to Tags
 
-- std::vector<Tag> readMultipleTags(timeout_ms)
-  - Poll the reader and return all tags seen within the timeout.
+Write custom data to tag memory banks. Data must be in multiples of 2 bytes (word-aligned). Supports writing to USER, EPC, TID, and RESERVED banks.
 
-- bool setTxPower(float dBm)
-  - Set transmit power (returns true on success).
+### Reading from Tags
 
-- float getTxPower()
-  - Query current tx power from the reader.
+Read stored data from any memory bank. Specify the memory bank, start address, and number of bytes to read.
 
-- Utility functions:
-  - buildFrame(...)
-  - parseFrame(...)
-  - computeChecksum(...)
+### Finding Access Passwords
 
-See `include/` directory and examples for full usage patterns.
+The password finder uses intelligent strategies:
 
----
+1. **Common Passwords** - Tests default and frequently used passwords
+2. **Manufacturer Passwords** - Tests brand-specific defaults
+3. **Repeating Patterns** - Tests patterns like 0x11111111, 0x22222222
+4. **Incremental Patterns** - Tests sequential patterns
+5. **Low Range Scan** - Brute force from 0x0000 to 0xFFFF
+6. **Full Brute Force** - Complete scan (not recommended, takes ~500 days)
 
-## Serial protocol notes
-- The JRD-100 protocol uses start/end framing bytes and a checksum/CRC per message.
-- The library handles:
-  - Frame assembly/disassembly
-  - Payload length verification
-  - Checksum validation and retry logic
-- Typical baudrate: check your reader's default (often 115200) — examples assume correct baud is configured.
+### Adjusting TX Power
 
----
+Control the reader's transmission power for optimal range and performance. Power is specified in hundredths of dBm (e.g., 2600 = 26.00 dBm).
+
+## Memory Banks
+
+RFID tags contain 4 memory banks:
+
+| Bank | ID | Description | Access |
+|------|----|----|---------|
+| **RESERVED** | 0x00 | Kill & Access passwords | Protected |
+| **EPC** | 0x01 | Electronic Product Code | Read/Write |
+| **TID** | 0x02 | Tag Identification | Read-Only |
+| **USER** | 0x03 | User Memory | Read/Write |
+
+### Memory Addressing
+
+- Memory is addressed in **words** (1 word = 2 bytes)
+- All read/write operations must be word-aligned
+- Data length must be a multiple of 2 bytes
+
+## API Overview
+
+### Core Functions
+
+**Port Management**
+- Open and close serial port connections
+- Configure communication parameters
+
+**Tag Operations**
+- Scan for multiple tags with timeout
+- Read data from specific memory banks
+- Write data to any accessible memory bank
+- Support for access password protected operations
+
+**Reader Configuration**
+- Set transmission power level
+- Get current power level
+- Configure communication parameters
+
+### Data Structures
+
+**TagData** - Contains EPC code and RSSI signal strength for each detected tag
+
+## Error Codes
+
+| Code | Meaning | Common Cause |
+|------|---------|--------------|
+| **0x03** | Memory protected | Incorrect access password |
+| **0x09** | Invalid parameter | Wrong data length or address |
+| **0x0F** | Insufficient power | Tag too far or low TX power |
+| **0x15** | Tag not found | No tag in range |
+| **0x16** | Memory access error | Invalid memory bank or address |
 
 ## Troubleshooting
-- Permission denied opening serial port:
-  - Use sudo or add your user to `dialout` (on Debian-based systems): sudo usermod -aG dialout $USER (then re-login)
-  - Or create a udev rule for your device.
 
-- No tags detected:
-  - Verify antenna and reader power
-  - Increase tx power with `MultiplePollingIncTx`
-  - Test with a known-working tag close to the antenna
+### Port Access Issues
+Add user to dialout group for serial port permissions.
 
-- Garbled data:
-  - Confirm correct baud rate and serial settings (8N1, no flow control unless required)
-  - Try `/dev/ttyUSB0` or other adapters if using USB-serial bridges
+### No Tags Detected
+- Verify tag compatibility (EPC Gen2 / ISO 18000-6C)
+- Increase transmission power
+- Reduce distance between reader and tag
+- Check for metal shielding interference
 
-- Library build errors:
-  - Ensure C++17 toolchain is installed and CMake version >= 3.10
+### Write Operations Fail
+- Tag may be password-protected
+- Use FindMemoryAccessPassword tool to discover password
+- Default password is usually 0x00000000
 
----
+### Communication Errors
+- Check serial cable connections
+- Verify baud rate settings
+- Ensure no electromagnetic interference
+- Test with different USB port
+
+### Build Problems
+- Update CMake to latest version
+- Clean build directory completely
+- Check for missing dependencies
+
+## Project Structure
+
+- **JRD-100/** - Core library files (header and implementation)
+- **examples/** - Sample programs demonstrating library usage
+- **build/** - Compiled binaries and build artifacts
+- **CMakeLists.txt** - Build configuration
+
+## Technical Details
+
+**Communication Protocol**
+- Baud Rate: 115200 (default)
+- Data Bits: 8
+- Parity: None
+- Stop Bits: 1
+- Flow Control: None
+
+**Threading**
+- Thread-safe serial operations
+- Mutex-protected I/O
+- Timeout-based frame reading
+
+**Frame Format**
+- Start: 0xBB
+- Address: 0x00
+- Command byte
+- Length field (2 bytes)
+- Payload data
+- Checksum
+- End: 0x7E
+
+
 
 ## Contributing
-- Bug reports and pull requests are welcome.
-- Preferred process:
-  1. Fork the repository
-  2. Create a feature branch
-  3. Add tests (where appropriate) and update README/docs
-  4. Submit a PR with a clear description of the change
 
----
-
-## TODO
-- Implement tag writing (writeTag)
-- Add single-tag read mode (singleRead)
-- Expose more reader settings (frequency plan, antennas, session)
-- Improve diagnostics and error codes
-- Add unit tests for frame parsing and checksum functions
-
----
+Contributions are welcome! Please ensure:
+- Code follows existing style
+- All features are tested on hardware
+- Documentation is updated
+- Pull requests include clear descriptions
 
 ## License
-MIT — see the LICENSE file included in this repository.
 
----
+This project is licensed under the MIT License.
+
+## Support
+
+For questions or issues:
+- Open an issue on GitHub
+- Check documentation in examples folder
+- Review troubleshooting section
+
+
+**Made for Raspberry Pi • C++11 • Thread-Safe • Production Ready**
